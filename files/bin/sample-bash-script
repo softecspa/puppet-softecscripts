@@ -1,0 +1,90 @@
+#!/bin/bash
+
+LOGLEVEL=$LOGLEVEL_DEBUG
+
+. $(dirname $(readlink -f $0))/../lib/bash/softec-common.sh || exit
+
+echo -e "\nSome info based on my default variables:\n"
+echo -e "Hello I'm '$SCRIPTNAME' running from '$SCRIPTPATH'\n, you can call me shortly '$SHORTNAME'\n"
+echo -e "I can log in '$LOGFILE', I have a cache dir in '$CACHEDIR', if needed\n"
+echo -e "My config come from '$CONFDIR/$CONFFILENAME'\n"
+echo -e "If I send mail, the sender is '$MAILFROM' and I write to '$MAILTO'\n"
+
+echo -e "The default LOGLEVEL is normal ($LOGLEVEL_NORMAL), but I set it to "
+echo -e "debug ($LOGLEVEL_DEBUG) to be more verbose\n"
+
+# Load configuration from default path
+# call with a parameter to get a specific config file
+include_conf
+
+# set a lockfile... at the end of the script call unlock
+get_lock
+
+# Questa funzione viene chiamata in caso di CTRL-C
+# Viene inoltre chiamata esplicitamente nella quit
+# per fare la stessa pulizia in caso di uscita normale
+# 
+function clean()
+{
+    rm -f $CACHEDIR/*
+}
+
+# Classica funzione che spiega la sintassi
+function help()
+{
+    echo -e "\n\nSYNTAX:\n\n\tExplain command syntax here...\n\n"
+}
+
+# Funzione chiamata alla fine dello script
+# restituisce 0 a meno che non gli si passi
+# un valore come primo parametro
+function clean()
+{
+    unlock
+}
+
+# fermati se l'utente con cui sto girando non è root
+ensure_user 'root'
+
+# aspetta se il loadavg non è abbastanza basso
+if ! wait_for_low_load; then
+    log_error "waited too long for low load5"
+    exit 1
+fi
+
+# i : all'inizio della stringa di options servono
+#     a gestire l'errore esplicitamente in caso di
+#     invio di parametri non previsti, infatti
+#     il valore di OPT diventa ? e OPTARG prende
+#     il valore del parametro non previsto
+# i : DOPO un parametro previsto significano invece
+#     che il parametro richiede un argomento
+while getopts :a:b:dir:h: OPT; do
+    case ${OPT} in
+        a)
+	    echo "option a has value ${OPTARG}"
+	    ;;
+        s)
+	    log_debug "Sending mail"
+	    send_mail "Soggetto" "Contenuto del messaggio"
+	    ;;
+        dir)
+	    log_debug "Creating ${OPTARG}..."
+	    ensure_dir ${OPTARG} 02775 root admin
+	    ;;
+        h)
+            help
+            quit
+            ;;
+        \?)
+            "ERROR: invalid option: -${OPTARG}"
+            help
+            quit 1
+            ;;
+        :)
+            log_error "ERROR: option -$OPTARG requires an argument ..."
+            quit 1
+            ;;
+    esac
+done
+

@@ -1,0 +1,79 @@
+#!/bin/bash
+
+###########################################################
+# Lorenzo Cocchi <lorenzo.cocchi@softecspa.it>            #
+# - Semplice verifica dei lockfile utilizzati da flock()  #
+#                                                         #
+# Versione 02                                             #
+###########################################################
+
+
+msg() {
+    local MSG="$1"
+    echo "${MSG}"
+}
+
+die() {
+    local MSG="$1"
+    local E=${2-1}
+    echo "${MSG}" >&2
+    exit ${E}
+}
+
+fflock () {
+    local lock="$1"
+    local cmd="$2"
+
+    if (flock -x -n -o ${lock} -c ${cmd} >/dev/null); then
+        return 0
+    else
+        return 1
+    fi
+}
+
+pps () {
+    local pids=$1
+    ps -p ${pids} -o user,start,status,cmd
+}
+
+LOCK="
+/var/lock/cron_frequently.lock
+/var/lock/cron_weekly.lock
+/var/lock/cron_monthly.lock
+/var/lock/cron_daily.lock
+/var/lock/cron_4hours.lock
+/var/lock/cron_hourly.lock
+/var/lock/cron_bihourly.lock
+"
+
+
+msg "Executing $(basename $0) on ${HOSTNAME}"
+
+if [ $(id -u) -ne 0 ]; then
+    msg "Some tools in this script may require r00t privileges"
+fi
+
+for lock in ${LOCK}; do
+    if ! (fflock ${lock} /bin/ls); then
+        msg "!!! ${lock} is locked !!!"
+    fi
+
+    # paranoid section ...
+    if (which fuser >/dev/null); then
+        pids=$(fuser ${lock} 2>/dev/null | cut -d ':' -f 2 | \
+            sed -r -e 's/^\s+|\s+$//g' -e s'/\s+/,/g')
+    else
+        pids=$(lsof ${lock} 2>/dev/null | egrep -v '^(lsof|COMMAND)' | \
+            awk 'BEGIN { ORS = ","} { print $2 }' | sed 's/,$//'g)
+    fi
+
+    if [ ! -z ${pids} ]; then
+        msg "Processes which block ${lock}:"
+        pps ${pids}
+    fi
+done
+
+# ultimo echo, necessario per python fabric
+echo
+
+# EOF

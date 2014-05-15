@@ -1,0 +1,69 @@
+#!/bin/bash
+
+######################################
+# Lorenzo Cocchi                     #
+# TRUNCATE delle tabelle `ezsession` #
+######################################
+
+#set -e
+
+die() {
+    local MSG="$1"
+    local E=${2-1}
+    echo "${MSG}" >&2
+    exit ${E}
+}
+
+# Include Softec library
+SOFTEC_LIB="/usr/local/lib/bash/softec-common.sh"
+. ${SOFTEC_LIB} 2> /dev/null || die "${SOFTEC_LIB}: Not found"
+
+# log level, production=0
+setloglevel 2
+
+SELF="$(basename $0)"
+MYCNF="/etc/mysql/debian.cnf"
+
+if [ ! -r "${MYCNF}" ]; then
+    log_error "${MYCNF}: NOT exists or NOT readable"
+    die
+fi
+
+DRBD_RESOURCE="mysql_data1"
+MYCMD="mysql --defaults-extra-file=${MYCNF} -N -b -e"
+EZ_TABLE="ezsession"
+GAP="2"
+
+#############################################################################
+# main
+#############################################################################
+
+if !(drbd_is_primary ${DRBD_RESOURCE}); then
+    log "${DRBD_RESOURCE} is not Primary"
+    exit 0
+fi
+
+log "${SELF}: start"
+
+for database in $(${MYCMD} 'SHOW DATABASES;' | egrep '^web'); do
+    ezsession_tbl=$(${MYCMD} "USE ${database}; SHOW TABLES LIKE '${EZ_TABLE}'")
+
+    if [ "x$ezsession_tbl" == 'xezsession' ] && [ $? -eq 0 ]; then
+        log "USE DATABASE ${database}"
+        ${MYCMD} "USE ${database}; SELECT COUNT(*) FROM ${EZ_TABLE};"
+        ${MYCMD} "USE ${database}; TRUNCATE TABLE ${EZ_TABLE};"
+        if [ $? -eq 0 ]; then
+            log "DATABASE ${database}, TRUNCATE TABLE ${ezsession_tbl}: DONE"
+        else
+            log_error "DATABASE ${database}, TRUNCATE TABLE ${ezsession_tbl}: FAILED"
+        fi
+    else
+        log_error "DATABASE ${database}, TABLE ${EZ_TABLE}: NOT FOUND"
+    fi
+
+    sleep ${GAP}
+done
+
+log "${SELF}: end"
+
+# EOF

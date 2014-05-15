@@ -1,0 +1,6 @@
+# 15/01/2012 lcocchi:
+#  - compressione dei Nagios logs +vecchi di 1 giorno
+#  - rimozione dei Nagios logs +vecchi di 90 giorni
+# 06/04/2012 lcocchi #863:
+#  - commentato, il Nagios utilizza i log per history, etc ... 
+#00 03 * * * root /mnt/storage/nagios3/sbin/manage_nagioslogs.sh /var/log/nagios3/archives 1 90

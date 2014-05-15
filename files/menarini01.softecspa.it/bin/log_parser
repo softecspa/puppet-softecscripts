@@ -1,0 +1,328 @@
+#!/usr/bin/env python
+
+"""
+NAME
+    log_parser.py
+
+SYNOPSIS
+    log_parser.py -l web.log -t reportlog.log
+
+DESCRIPTION
+    Lo script e'  pensato  specificatamente  per  il  cliente  Menarini.
+    Elabora l'AccessLog mensile di IspConfig, passato come parametro,  e
+    ne estrae le URL "www.en.ieulagay.com.tr" e "www.en.ieulagay.com.tr"
+    in  base  alla  data  del  giorno  precedente  alla  data   odierna.
+    Successivamente invia il report tramite FTP.
+
+    Per la lista completa dei parametri supportati  eseguire  lo  script
+    con il parametro -h
+
+USAGE
+    python log_parser.py -l web.log -t reportlog_$(date +%F_%H-%M-%S).log
+    python log_parser.py -l web.log -t reportlog_$(date +%F_%X).log \
+        -d 16/Mar/2012
+
+HELP
+    python log_parser.py -h
+
+AUTHOR
+    Lorenzo Cocchi <lorenzo.cocchi@softecspa.it>
+"""
+
+import collections
+import ConfigParser
+import datetime
+import fileinput
+import ftplib
+import optparse
+import os
+import re
+import sys
+import time
+import zipfile
+
+
+def yesterday_date(format='%d/%b/%Y'):
+    """Return yesterday's date.
+
+    Keyword arguments:
+    format -- argument which would be used to format given time,
+              default '%d/%b/%Y'
+
+    Returns: string
+
+    """
+
+    today = datetime.date.today()
+    one_day = datetime.timedelta(days=1)
+    yesterday = (today - one_day).strftime(format)
+
+    return '%s' % yesterday
+
+
+def config_parser(_file, section):
+    """Parser configuration file.
+
+    Keyword arguments:
+    _file   -- configuration file
+    section -- header of configuration file, identified by looking for lines
+               starting with [ and ending with ]
+
+    Returns: dictionary
+
+    """
+
+    name_value = collections.defaultdict(str)
+    parser = ConfigParser.SafeConfigParser()
+
+    if not parser.read(_file):
+        print >>sys.stderr, 'Cannot read', _file
+        sys.exit(1)
+
+    if not parser.has_section(section):
+        print >>sys.stderr, _file, '... Has not section', section
+        sys.exit(1)
+
+    for name in parser.options(section):
+        name_value[name] = parser.get(section, name).strip('\'"')
+
+    return name_value
+
+
+def file_access(_file):
+    """Simple file access with 'built-in function open'.
+
+    Keyword arguments:
+    _file -- file
+
+
+    """
+
+    try:
+        fh = open(_file, 'r')
+        try:
+            pass
+        finally:
+            fh.close()
+    except:
+        print >>sys.stderr, (sys.exc_info()[0])
+        print >>sys.stderr, (sys.exc_info()[1])
+        sys.exit(1)
+
+
+def file_gt_zero(_file):
+    """Check file size.
+
+    Keyword arguments:
+    _file -- file
+
+
+    Return: True if file is greather than zero bytes
+
+    """
+
+    if os.path.getsize(_file) > 0:
+        return True
+    else:
+        return False
+
+
+def line_parser(line, date, url):
+    """Split the line into a list, if match date and url return line
+
+    Keyword arguments:
+    line -- line, must to be a string
+    date -- date, ex.: 06/Apr/2012
+    url  -- must to be a objetc regexp
+
+    Returns: string
+
+    """
+
+    split_line = line.split()
+    try:
+        if date in split_line[4]:
+            if url.match(split_line[1]):
+                return '%s' % line.rstrip()
+    # Catch malformed log line
+    except IndexError:
+        return None
+
+
+def zip_file(_file, zip_file):
+    """Write compress file with ZIP algorithm.
+
+    Keyword arguments:
+    _file    -- the source file for compression.
+    zip_file -- the destination file will be compress with ZIP algorithm.
+
+
+    """
+
+    try:
+        zf = zipfile.ZipFile(_file, mode='w')
+        try:
+            zf.write(zip_file, compress_type=zipfile.ZIP_DEFLATED)
+        finally:
+            zf.close()
+    except:
+        print >>sys.stderr, (sys.exc_info()[0])
+        print >>sys.stderr, (sys.exc_info()[1])
+        sys.exit(1)
+
+
+def ftp_send(_file, ftp_opts):
+    """Send file with FTP.
+
+    Keyword arguments:
+    _file   -- the file will be sent via FTP.
+    ft_opts -- dictionary with name and value with FTP
+               credentials and options.
+
+    """
+
+    cwd = os.getcwd()
+    path, _file = os.path.split(_file)
+    if path:
+        os.chdir(path)
+
+    try:
+        ftpsess = ftplib.FTP(ftp_opts['server'], ftp_opts['user'],
+                             ftp_opts['password'])
+        try:
+            if ftp_opts['debug'] == 'True':
+                ftpsess.set_debuglevel(1)
+            if ftp_opts['active'] == 'True':
+                ftpsess.set_pasv(False)
+            fh = open(_file, 'rb')
+            if ftp_opts['dir']:
+                ftpsess.cwd(ftp_opts['dir'])
+            ftpsess.storbinary('STOR ' + _file, fh)
+        finally:
+            fh.close()
+            ftpsess.quit()
+            os.chdir(cwd)
+    except:
+        print >>sys.stderr, (sys.exc_info()[0])
+        print >>sys.stderr, (sys.exc_info()[1])
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    parser = optparse.OptionParser(usage='%prog -l web.log -t report.log',
+                                   version='0.2')
+
+    parser.add_option('-d', '--date',
+                      help='date, ex.: 03/Apr/2012 - default \
+yesterday\'s date',
+                      dest='date', action='store')
+
+    parser.add_option('-l', '--accesslog', help='Web Server AccessLog',
+                      dest='accesslog', action='store')
+
+    parser.add_option('-t', '--reportlog', help='Destination LogReport',
+        dest='reportlog', action='store')
+
+    parser.add_option('-r', '--regexp',
+                      help='Regexp for URL match - default \
+^www\.(en)?\.?ieulagay\.com\.tr$',
+                      dest='pattern', action='store',
+                      default='^www\.(en)?\.?ieulagay\.com\.tr$')
+
+    parser.add_option('-s', '--ftp-enable',
+                      help='Send report via FTP - default disable',
+                      dest='ftpenable', default=False, action='store_true')
+
+    parser.add_option('-f', '--ftp-config',
+                      help='FTP config file - \
+default /usr/local/etc/logreport.conf',
+                      dest='ftpconfig', action='store',
+                      default='/usr/local/etc/log_parser.conf')
+
+    parser.add_option('-z', '--compress',
+                      help='Enable zip compression - default disable',
+                      dest='compression',
+                      default=False, action='store_true')
+
+    (options, args) = args = parser.parse_args()
+
+    if options.accesslog:
+        access_log = options.accesslog
+    else:
+        parser.error('web.log NOT defined')
+
+    if options.reportlog:
+        report_log = options.reportlog
+    else:
+        parser.error('report.log NOT defined')
+
+    if options.date:
+        date = options.date
+    else:
+        date = yesterday_date()
+
+    ftp_enable = options.ftpenable
+    ftp_config = options.ftpconfig
+    if options.ftpenable:
+        file_access(ftp_config)
+
+    # L'AccessLog e' leggibile?
+    file_access(access_log)
+
+    # Regexp
+    re_url = re.compile(options.pattern)
+
+    # Check per non rischiare di cancellare l'AccessLog originale
+    if os.path.exists(report_log):
+        print >>sys.stderr, report_log, "Already exists"
+        sys.exit(1)
+
+    # Timestamp inizio operazioni
+    start_time = time.time()
+
+    # Parser dell'AccessLog & scrittura del ReportLog
+    try:
+        fh = open(report_log, 'w')
+        try:
+            for count, line in enumerate(fileinput.input([access_log])):
+                line_parsed = line_parser(line, date, re_url)
+                if line_parsed:
+                    print >>fh, line_parsed
+        finally:
+            fh.close()
+    except:
+        print >>sys.stderr, (sys.exc_info()[0])
+        print >>sys.stderr, (sys.exc_info()[1])
+        sys.exit(1)
+
+    # Sono state trovate corrispondenze?
+    if not file_gt_zero(report_log):
+        print >>sys.stderr, report_log, "Has zero size"
+        sys.exit(1)
+
+    # Compressione
+    if options.compression:
+        file_name, file_ext = os.path.splitext(report_log)
+        file_report = "%s.zip" % (file_name)
+
+        if os.path.exists(file_report):
+            os.remove(file_report)
+
+        zip_file(file_report, report_log)
+    else:
+        file_report = report_log
+
+    # FTP
+    if ftp_enable:
+        if file_gt_zero(file_report):
+            ftp_send(file_report, config_parser(ftp_config, 'ftp_section'))
+        else:
+            print >>sys.stderr, file_report, "Has zero size"
+            sys.exit(1)
+
+    # Report finale
+    today = datetime.datetime.today().strftime('%d/%b/%Y %H:%M:%S')
+
+    print '%s %s (%d bytes): processed %d lines in %.3f seconds' % \
+            (today, access_log, os.path.getsize(access_log), count,
+             time.time() - start_time)

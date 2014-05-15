@@ -1,0 +1,821 @@
+#!/usr/bin/php
+<?php
+# SVN revision information:
+# @version $Revision: 6337 $:
+# @author  $Author: f.pizzurro $:
+# @date    $Date: 2012-05-14 09:21:15 +0000 (Mon, 14 May 2012) $:
+
+function rel_time($from, $to = null)
+ {
+  $to = (($to === null) ? time() : $to);
+  $to = (is_int($to) ? $to : strtotime($to));
+  $from = (is_int($from) ? $from : strtotime($from));
+
+  $units = array
+  (
+   "year"   => 29030400, // seconds in a year   (12 months)
+   "month"  => 2419200,  // seconds in a month  (4 weeks)
+   "week"   => 604800,   // seconds in a week   (7 days)
+   "day"    => 86400,    // seconds in a day    (24 hours)
+   "hour"   => 3600,     // seconds in an hour  (60 minutes)
+   "minute" => 60,       // seconds in a minute (60 seconds)
+   "second" => 1         // 1 second
+  );
+
+  $diff = abs($from - $to);
+  $suffix = (($from > $to) ? "from now" : "ago");
+  $output = '';
+  foreach($units as $unit => $mult)
+   if($diff >= $mult)
+   {
+    $and = (($mult == 1) ? ("") : ("and "));
+    $output .= ", ".$and.intval($diff / $mult)." ".$unit.((intval($diff / $mult) == 1) ? ("") : ("s"));
+    $diff -= intval($diff / $mult) * $mult;
+   }
+  #$output .= " ".$suffix;
+  $output = substr($output, strlen(", "));
+
+  return $output;
+}
+
+
+class SmartFind {
+
+	var $mypath='';
+	var $test_mode=FALSE;
+	var $help_mode=FALSE;
+	var $typefilter=array();
+	var $commands=array();
+	var $debug=FALSE;
+	var $verbose=FALSE;
+	var $follow=FALSE;
+	var $maxload=3;
+	var $df_monitor=FALSE;
+	var $df_limit=10000;
+	var $pause=5;
+	var $batch_size=0;
+	var $mtime=FALSE;
+	var $isempty=FALSE;
+	var $isnotempty=FALSE;
+	var $skippable=array();
+	var $skippabledirs=array();
+	var $skipbylist=FALSE;
+	var $skipbyregex=FALSE;
+
+	var $skipdir=FALSE;
+	var $skipdirbyregex=FALSE;
+	var $skipdirlist=FALSE;
+
+	var $counter=0;
+	var $testing_mode=FALSE;
+	var $tmp_dir='/tmp/';
+	var $php_min_ver='5';
+	var $tests=array();
+	var $test_n=0;
+
+    // copying options
+    var $md5before=FALSE;
+    var $md5after=FALSE;
+    var $owner=FALSE;
+    var $group=FALSE;
+    var $perms=FALSE;
+
+    var $start_time = 0;
+	var $errors=FALSE;
+
+
+	function __construct($args)
+	{
+		if(isset($args['test']))
+			$this->testing();
+		if((isset($args['help']))||(isset($args['h'])))
+			$this->showSyntax();
+		if(isset($args['testing']))
+			$this->testing_mode=TRUE;
+
+		if((@is_dir($args[0]))&&(!@empty($args[0])))
+		{
+			$this->mypath=$args[0];
+			if(!is_readable($this->mypath))
+				$this->syntaxError("Directory ".$this->mypath." is not readable");
+			else
+			{
+				$this->initArgs($args);
+				#if($this->debug)
+				#	print_r($args);
+
+				if ($this->verbose)
+				{
+					$this->printArgs();
+					$this->printStartDate();
+				}
+
+			    $this->find($this->mypath,$args);
+
+				if ($this->verbose)
+					$this->printStopDate();
+			}
+		}
+		else
+		{
+			$this->syntaxError("First parameter must be a valid directory path");
+		}
+	}
+
+	function initArgs($args)
+	{
+		foreach($args as $key => $arg)
+		{
+			$key = ''.$key;
+			switch($key)
+			{
+				case 'type':
+					$values=explode(',',$arg);
+					foreach($values as $value)
+					{
+						if (preg_match('/(file|dir|link)/', $value))
+							$this->typefilter[]=$value;
+						else
+							$this->syntaxError("option --type=".$value." is unknown");
+					}
+				break;
+
+				case 'exec':
+					if (!empty($arg))
+						$this->commands[]=$arg;
+                    else
+						$this->syntaxError("option --exec requires a value");
+				break;
+
+				case 'debug':
+				case 'd':
+					$this->debug=TRUE;
+				break;
+
+				case 'verbose':
+				case 'v':
+					$this->verbose=TRUE;
+				break;
+
+				case 'L':
+				case 'follow-symlinks':
+					$this->follow=TRUE;
+				break;
+
+                case 'a':
+                case 'archive':
+                    $this->owner = TRUE;
+                    $this->group = TRUE;
+                    $this->perms = TRUE;
+				break;
+
+				case 'df_monitor':
+					if (is_dir($arg) and is_readable($arg))
+						$this->df_monitor=$arg;
+					else
+						$this->syntaxError("df_monitor $arg argument must be a readable directory");
+				break;
+
+				case 'copy-to':
+					if (empty($arg))
+						$this->syntaxError("Parameter 'copy-to' requires a value.");
+					if (!is_dir($arg))
+					if(!@mkdir($arg, fileperms($this->mypath), TRUE))
+					{
+						echo "Fatal error, cannot create destination path '$arg'\n\n";
+						exit(1);
+					}
+					if (!is_dir($arg))
+					{
+						echo "Fatal error, destination path '$arg' does not exists or you cannot access it\n\n";
+						exit(1);
+					}
+					$this->commands[]="smartCopy $arg";
+				break;
+
+
+				# Integer options
+				case 'maxload':
+				case 'pause':
+				case 'batch_size':
+				case 'df_limit':
+				case 'mtime':
+					if (is_numeric($arg))
+						$this->$key=$arg;
+				break;
+
+				# Boolean options
+				case 'isempty':
+				case 'isnotempty':
+				case 'md5before':
+				case 'md5after':
+				case 'owner':
+				case 'group':
+				case 'perms':
+					if ($arg==1)
+						$this->$key=TRUE;
+				break;
+
+				# Generic strings options
+				case 'skipbyregex':
+					if (!empty($arg))
+						$this->$key=$arg;
+				break;
+
+				case 'skipbylist':
+					if ( is_file($arg) and is_readable($arg) and (filesize($arg)>0) )
+					{
+						$this->skippable=array_merge($this->skippable, file($arg, FILE_IGNORE_NEW_LINES));
+						$this->skipbylist=$arg;
+					}
+					else
+						$this->syntaxError("$arg is not a readable file");
+				break;
+
+				case 'skipdir':
+					$this->$key=preg_replace('/\/*$/','',$arg);
+				break;
+
+				case 'skipdirlist':
+					if ( is_file($arg) and is_readable($arg) and (filesize($arg)>0) )
+					{
+						$this->skippabledirs=array_merge($this->skippabledirs, preg_replace('/\/*$/','',file($arg, FILE_IGNORE_NEW_LINES)));
+						$this->skipdirlist=$arg;
+					}
+					else
+						$this->syntaxError("$arg is not a readable file");
+				break;
+
+				case 'skipdirbyregex':
+					if (!empty($arg))
+						$this->$key=$arg;
+				break;
+
+			}
+		}
+
+		if(count($this->commands)==0)
+			$this->commands[]='echo #Pathname';
+
+	}
+
+	function syntaxError($msg)
+	{
+		global $argv;
+		$s[] = '';
+		$s[] = 'Syntax error:';
+		$s[] = "\t$msg";
+		$s[] = '';
+		$s[] = "Use $argv[0] -h or --help to show right syntax";
+		error_log(implode("\n", $s));
+		echo "\n\n";
+		exit(1);
+	}
+
+	function find($path,$args)
+	{
+		foreach (new DirectoryIterator($path) as $item)
+		{
+			try
+			{
+				$this->counter++;
+				if ( ($this->batch_size > 0) && ($this->counter % $this->batch_size) == 0)
+				{
+					if (($this->verbose)||($this->testing_mode))
+						echo "Done ".$this->counter." items, sleeping ".$this->pause." second(s)...\n";
+					sleep($this->pause);
+				}
+
+				# if is a dir that must not be skipped...
+				if ($item->isDot())
+					continue;
+
+				# if is skippable item
+				elseif ((in_array($item->getPathname(),$this->skippable)) or ((count($this->typefilter)>0) and (!in_array($item->getType(),$this->typefilter))))
+				{
+					if($this->debug)
+						echo $item->getPathname()." is not in the filter range: ".implode(" ", $this->typefilter)."\n";
+				}
+				elseif($this->skipbylist and $this->isSkippableByList($item))
+				{
+					if($this->debug)
+						echo $item->getPathname()." is skyppable by list ".$this->skipbylist."\n";
+				}
+				#if is skipable by regex
+				elseif ($this->skipbyregex and preg_match($this->skipbyregex, $item->getPathname()))
+				{
+					if ($this->debug)
+						echo "Skipping file that match '".$this->skipbyregex."': ".$item->getPathname()."\n";
+				}
+				#if isempty is ON and itemsize is > 0
+				elseif($this->isempty and ((($item->isFile()) and ($item->getSize()>0)) or (($item->isDir()) and (count(scandir($item->getPathname()))>2))))
+				{
+					if ($this->debug)
+						echo "Skipping not empty file: ".$item->getPathname()." ".$item->getSize()."\n";
+				}
+				// check for notempty option
+				elseif($this->isnotempty and ((($item->isFile()) and ($item->getSize()==0)) or (($item->isDir()) and (count(scandir($item->getPathname()))==2))))
+				{
+					if ($this->debug)
+						echo "Skipping empty file: ".$item->getPathname()."\n";
+				}
+				// mtime option
+				elseif (!$this->checkMTime($item))
+				{
+					if($this->debug)
+						echo "Skipping file older than ".$this->mtime." days: ".$item->getPathname()."\n";
+				}
+				elseif(!$this->checkDf())
+				{
+					// Pay attention to free disk space
+					echo "ERROR: disk free space is lower than imposed limit: ".(disk_free_space($this->df_monitor)/1024)."KB <= ".($this->df_limit*1024)."KB\n";
+					exit(1);
+				}
+				else
+				{
+					$this->checkLoad();
+					$result=$this->applyCommand($item);
+					if((!$result) and (!$this->errors))
+						$this->errors=TRUE;
+				}
+
+				if ( ($item->isDir() and !$item->isLink()) or ($item->isDir() and $item->isLink() and $this->follow) )
+				{
+					if(($this->skipdirlist and $this->isSkippableByDirList($item)) or (($this->skipdir) and ($this->skipdir==$item->getPathname())) or ($this->skipdirbyregex and preg_match($this->skipdirbyregex, $item->getPathname())))
+					{
+						if ($this->debug)
+							echo "Skipping dir ".$item->getPathname()."\n";
+					}
+					else
+					{
+						if ($this->debug)
+							echo "Recursive call on ".$item->getPathname()."\n";
+						$this->find($item->getPathname(), $args);
+					}
+				}
+			}
+			catch (Exception $e)
+			{
+				echo 'Caught exception: ' . $e->getMessage() . "\n";
+			}
+		}
+		return TRUE;
+	}
+
+	function printArgs()
+	{
+		echo "Running smartfind:\n".
+		"\tpath: ".$this->mypath."\n".
+		"\tcommands: ".implode("\n\t\t", $this->commands)."\n".
+		(!empty($this->typefilter) ? "\ttypes: ".implode(",", $this->typefilter)."\n" : '').
+		(!empty($this->maxload) ? "\tmaxload: ".$this->maxload."\n" : '').
+		(!empty($this->pause) ? "\tpause: ".$this->pause."\n" : '').
+		(!empty($this->batch_size) ? "\tbatch_size: ".$this->batch_size."\n" : '').
+		(!empty($this->mtime) ? "\tmtime: ".$this->mtime."\n" : '').
+		(!empty($this->skipbyregex) ? "\tskipbyregex: ".$this->skipbyregex."\n" : '').
+		(!empty($this->skipbylist) ? "\tskipbylist: ".$this->skipbylist."\n" : '').
+		(!empty($this->skipdir) ? "\tskipdir: ".$this->skipdir."\n" : '').
+		(!empty($this->skipdirlist) ? "\tskipdirlist: ".$this->skipdirlist."\n" : '').
+		(!empty($this->skipdirbyregex) ? "\tskipdirbyregex: ".$this->skipdirbyregex."\n" : '').
+		($this->md5before ? "\tmd5before\n": '').
+		($this->md5after ? "\tmd5after\n" : '').
+		($this->owner ? "\towner\n" : '').
+		($this->group ? "\tgroup\n" : '').
+		($this->perms ? "\tperms\n" : '').
+	    	($this->follow ? "\tfollow-symlynks\n" : '').
+		($this->isempty ? "\tisempty\n" : '').
+		($this->isnotempty ? "\tisnotempty\n" : '').
+		($this->verbose? "\tverbose\n" : '').
+		($this->debug? "\tdebug\n" : '').
+		($this->df_monitor? "\tdf_monitor=".$this->df_monitor."\n\tdf_limit=".$this->df_limit."MB\n" : '').
+		"\n\n";
+	}
+
+	function printStartDate()
+	{
+		echo "Starting on ".date('d-m-Y H:i')."\n\n";
+        $this->start_time = time();
+	}
+
+	function printStopDate()
+	{
+		if($this->errors)
+			echo "\nEnd with SOME ERROR(S)";
+		else
+			echo "\nEnd with SUCCESS ";
+        echo "after ".rel_time($this->start_time).' on '.date('d-m-Y H:i')."\n\n";
+	}
+
+    /*
+     * http://bugs.php.net/bug.php?id=44945
+     * http://www.positon.org/post/Function-PHP-escapeshellarg,-UTF8-et-locales
+     * http://kore-nordmann.de/blog/php_charset_encoding_FAQ.html
+     */
+    function escapeshellarg($string)
+    {
+        return "'".str_replace("'", "'\\''", $string)."'";
+    }
+
+    function smartCopy($item, $dest, &$output)
+    {
+        if ($item->isDot())
+            return FALSE;
+
+        $pathname = $item->getPathname();
+        $relative_source_pathname = substr($pathname, strlen($this->mypath)+1);
+        $destination_pathname = "$dest/$relative_source_pathname";
+        $destination_path = dirname($destination_pathname);
+
+        if (!is_dir($destination_path))
+        {
+            if ($this->debug)
+            {
+                echo "Directory '$destination_path' must be created\n";
+            }
+            else
+            {
+                mkdir($destination_path, fileperms(dirname($pathname)), TRUE);
+            }
+        }
+
+        if ($item->isLink())
+        {
+            $link_dest = readlink($pathname);
+            if (is_link($destination_pathname))
+            {
+                if (readlink($pathname)!==readlink($destination_pathname))
+                {
+                    unlink($destination_pathname);
+                    $this->exec('ln -vs '.$this->escapeshellarg($link_dest).' '.$this->escapeshellarg($destination_pathname), $output);
+                }
+            }
+            else
+            {
+                $this->exec('ln -vs '.$this->escapeshellarg($link_dest).' '.$this->escapeshellarg($destination_pathname), $output);
+            }
+        }
+        else
+        {
+            if ($item->isDir() and !is_dir($destination_pathname))
+            {
+               $this->exec("mkdir -v ".$this->escapeshellarg($destination_pathname), $output);
+            }
+            elseif($item->isFile())
+            {
+                if ($this->md5before and is_file($destination_pathname) and (md5_file($pathname) != md5_file($destination_path)))
+                {
+                    $this->exec("rm -fv ".$this->escapeshellarg($destination_pathname), $output);
+                }
+                $this->exec("cp -uv ". $this->escapeshellarg($pathname).' '.$this->escapeshellarg($destination_pathname), $output);
+                if (!$this->debug and $this->md5after and (md5_file($pathname) != md5_file($destination_pathname)))
+                {
+                    $output .= "MD5 error copying '$pathname' to '$destination_pathname'";
+                    return FALSE;
+                }
+            }
+            $octal_perms = substr(sprintf('%o', $item->getPerms()), -4);
+            $this->owner and $this->exec("chown ".$item->getOwner().' '. $this->escapeshellarg($destination_pathname), $output);
+            $this->group and $this->exec("chgrp ".$item->getGroup().' '.$this->escapeshellarg($destination_pathname), $output);
+            $this->perms and $this->exec("chmod $octal_perms ".$this->escapeshellarg($destination_pathname), $output);
+        }
+        return TRUE;
+    }
+
+    function exec($command, &$output)
+    {
+		if ($this->debug)
+		{
+			echo "$command\n";
+			return TRUE;
+		}
+		$command = exec($command, $cmd_output, $retval);
+		$output .= implode("\n", $cmd_output);
+		if($retval!=0)
+            return FALSE;
+        return TRUE;
+    }
+
+	function applyCommand($item)
+	{
+        if ($this->debug)
+			echo "Applying on ".$item->getPathname()."\n";
+
+		foreach($this->commands as $command)
+		{
+		    $command = preg_replace('/#Pathname/', $this->escapeshellarg($item->getPathname()), $command);
+		    $output = '';
+            $result = FALSE;
+
+            if (preg_match('/([^\s]+)\s+([^\s]+)/', $command, $matches) and method_exists($this, $matches[1]))
+            {
+                $method = $matches[1];
+                $method_arg =  $matches[2];
+                $result = $this->$method($item, $method_arg, $output);
+            }
+            else
+            {
+                $result = $this->exec($command, $output);
+            }
+            if (!$result)
+			{
+			    error_log("[ ".date("Y M d H:i:s")." ] ERROR running '$command': '$output'\n");
+			    return FALSE;
+		    }
+            else
+			{
+				if (!empty($output))
+					echo "[ ".date("Y M d H:i:s")." ] ".$output."\n";
+			}
+		}
+		return TRUE;
+	}
+
+	function isSkippableByList($item)
+	{
+		foreach($this->skippable as $regex)
+		{
+			if(preg_match($regex,$item->getPathname()))
+				return(true);
+		}
+		return(false);
+	}
+
+	function isSkippableByDirList($item)
+	{
+		foreach($this->skippabledirs as $dir)
+		{
+			if($dir==$item->getPathname())
+			{
+				return(true);
+			}
+		}
+		return(false);
+	}
+
+	function checkLoad()
+	{	
+		$load = sys_getloadavg();
+		if (is_array($load))
+		{
+			while ($load[0] >= $this->maxload)
+			{
+				if($this->testing_mode)
+				{
+                    //solo per far funzionare il testing dell'applicazione
+					echo "WARNING: load average is too high, wait please\n"; 
+					$load=array(0.0);
+				}
+				else
+				{
+					if ($this->verbose or $this->debug)
+						echo "WARNING: load average is $load[0], wait please...\n";
+					sleep($this->pause);
+					$load = sys_getloadavg();
+				}
+			}
+		}
+	}
+	
+	function checkDf()
+	{
+		if($this->df_monitor and ((disk_free_space($this->df_monitor)/1024) <= ($this->df_limit*1024)))
+			return(false);
+		else
+			return(true);
+	}
+
+	function checkMTime($item)
+	{
+		if($this->mtime)
+		{
+			$mtimeLimit = time() - ($this->mtime*86400);
+			if ( $item->getMTime() < $mtimeLimit )
+				return false;
+			else
+			{
+				if ($this->debug)
+					echo "File is newer than ".$this->mtime." days: " . $item->getPathname() . " [".$item->getMTime()." < $mtimeLimit ]\n";
+				return true;
+			}
+		}
+		else
+			return(true);
+	}
+
+	function showSyntax()
+	{
+		$s[] = '';
+		$s[] = 'SYNTAX:';
+		$s[] = __FILE__." <path> [options]";
+		$s[] = '';
+		$s[] = 'Available options:';
+		$s[] = '';
+		$s[] = "--type=[dir|file|link]\n\tyou can specity a comma separated list of types";
+		$s[] = "--exec='shell command'\n\tFor each item found, the 'shell command' will be executed in a php 'exec'.\n\tThe string #Pathname will be substituted with the full pathname of each item";
+		$s[] = "--copy-to=PATH\n\tAll items found will be copied to PATH, respecting their path relative to <path>.";
+		$s[] = "--owner\n\tWhile copying files and directories, preserve ownership of files.";
+		$s[] = "--group\n\tWhile copying files and directories, preserve group of files.";
+		$s[] = "--perms\n\tWhile copying files and directories, preserve permissions of files.";
+		$s[] = "-a|--archive\n\tSame as --owner --group --perms.";
+        $s[] = "--md5before\n\tWhile copying files, if destination exists use md5 check to choose if source must be copied (instead of size & modtime).";
+        $s[] = "--md5after\n\tWhile copying files, check if destionation has the same md5 of source and return error if not.";
+		$s[] = "-L|--follow-symlinks\n\tfollow symlinks. By default lynks are not dereferenced";
+		$s[] = "--isempty\n\tFile is empty and is either a regular file or a directory.";
+		$s[] = "--isnotempty\n\tFile is NOT empty and is either a regular file or a directory.";
+		$s[] = "--mtime=N\n\t.File's data was last modified N*24 hours ago.  See the comments for -atime to understand how rounding\n\taffects the interpretation of file modification times.";
+		$s[] = "--skipbyregex=\"expression\"\n\tskip found item if match PREG expression";
+		$s[] = "--skipbylist=FILENAME\n\tskip found item if match any of the pathname listed in FILENAME";
+		$s[] = "--skipdir=PATH\n\tskip found item if match given path and not descend in to directory";
+		$s[] = "--skipdirlist=FILENAME\n\tskip found item if match any on the pathname listed in FILENAME and not descend in to directory";
+		$s[] = "--skipdirbyregex=\"expression\"\n\tskip found item if match PREG expression and not descend in to directory";
+		$s[] = "-d|--debug\n\tprint commands, but not run them";
+		$s[] = "-v|--verbose\n\tprint more output";
+		$s[] = "--maxload=N\n\tpause the recursive apply if load is equal or more of N. Default is ".$this->maxload;
+		$s[] = "--pause=N\n\twhen doing a pause, sleep for N seconds. Default is ".$this->pause." seconds.";
+		$s[] = "--batch_size=N\n\tpause execution every N items. Default is ".$this->batch_size." items.";
+		$s[] = "--df_monitor=MOUNT_POINT\n\tmonitor free space on MOUNT_POINT, stop if raises DF_LIMIT.";
+		$s[] = "--df_limit=N\n\tStop execution if free space on MOUNT_POINT is not at least N Megabytes. Default is ".$this->df_limit." Megabytes.";
+		$s[] = "--test\n\tUse this as first parameter and you will run self-tests.";
+		echo implode("\n", $s);
+		echo "\n\n";
+		exit(1);
+	}
+
+	function testing()
+	{
+		$this->testing_mode=TRUE;
+
+		if($this->initialCheck())
+		{
+			$this->createEnvironment();
+			$this->loadTests();
+
+			foreach($this->tests as $test)
+			{
+				$this->makeTest($test);
+			}
+		}
+		die("\n\n");
+	}
+
+	function initialCheck()
+	{
+		echo "Making initial check...\n\n";
+		$phpversion=preg_replace("/-[0-9a-zA-Z.]*/","",phpversion());
+		if($phpversion<$this->php_min_ver)
+		{
+			echo "[ERROR] PHP version ".$this->php_min_ver." or higher required. PHP version found is $phpversion. Please update it\nStop check\n";
+			return false;
+		}
+		else
+			echo "PHP version: ".$phpversion."\t[OK]\n";
+
+		if(!(is_writable($this->tmp_dir)))
+		{
+			echo "[ERROR] directory ".$this->tmp_dir." is not writable. Please fix this issue\nStop check\n";
+			return false;
+		}
+		else
+			echo "$this->tmp_dir writable: \t[OK]\n";
+		return(true);
+	}
+
+	function createEnvironment()
+	{
+
+		exec("rm -rf ".$this->tmp_dir."smartfind*",$output);
+		mkdir($this->tmp_dir."smartfind_test");
+		mkdir($this->tmp_dir."smartfind_test/dir_1");
+		mkdir($this->tmp_dir."smartfind_test/dir_2");
+
+		exec ("touch ".$this->tmp_dir."smartfind_test/file_1");
+		exec ("echo blablabla > ".$this->tmp_dir."smartfind_test/file_2");
+
+		exec("touch ".$this->tmp_dir."smartfind_test/dir_1/file_1_1");
+		exec("echo '/\/tmp\/smartfind_test\/dir_2\/.*/\n/\/tmp\/smartfind_test\/file.*/' > ".$this->tmp_dir."smartfind_test/dir_1/file_1_2");
+		exec("touch -mt ".Date("YmdHG",(time()-864000))." ".$this->tmp_dir."smartfind_test/dir_1/file_1_1");
+
+		exec("echo blablabla > ".$this->tmp_dir."smartfind_test/dir_2/file_2_2");
+		exec("touch -mt ".Date("YmdHG",(time()-864000))." ".$this->tmp_dir."smartfind_test/dir_2/file_2_2");
+		exec("touch ".$this->tmp_dir."smartfind_test/dir_2/file_2_1");
+
+		mkdir($this->tmp_dir."/smartfind_test/dir_2/dir_2_1");
+		exec("touch ".$this->tmp_dir."/smartfind_test/dir_2/dir_2_1/file_2_1_1");
+		mkdir($this->tmp_dir."/smartfind_test/dir_2/dir_2_2");
+
+		mkdir($this->tmp_dir."smartfind_test_linked");
+		exec ("touch ".$this->tmp_dir."smartfind_test_linked/file_1");
+		exec ("echo blablabla > ".$this->tmp_dir."smartfind_test_linked/file_2");
+		exec ("touch ".$this->tmp_dir."smartfind_test_linked/file_3");
+		exec("touch -mt ".Date("YmdHG",(time()-864000))." ".$this->tmp_dir."smartfind_test_linked/file_3");
+
+		mkdir($this->tmp_dir."smartfind_test_linked/dir_1");
+		mkdir($this->tmp_dir."smartfind_test_linked/dir_2");
+		exec ("touch ".$this->tmp_dir."smartfind_test_linked/dir_2/file_2_1");
+		exec ("echo blablabla > ".$this->tmp_dir."smartfind_test_linked/dir_2/file_2_2");
+
+		exec ("ln -s ".$this->tmp_dir."smartfind_test_linked/ ".$this->tmp_dir."smartfind_test/link");
+
+        $items[]='dir_3/file con spazi';
+        $items[]='dir_3/file con (tonde) e {graffe} e [quadre]';
+        $items[]='dir_3/file còn lèttéré àccèntàtè ìn ognùnì';
+        $items[]='dir_3/file c*n `c@ra##eri` \'ba$tardi';
+        $items[]='dir_3/file con caratteri bastardissimi ¹²³¼½¬~æł€¶ŧ←↓→øþæßðđŋħjĸł@#«»¢“”ñµ';
+
+        foreach($items as $item)
+        {
+            $pathname=$this->tmp_dir."smartfind_test/$item";
+            if (!is_dir(dirname($pathname)))
+                mkdir(dirname($pathname), 02775, true);
+            file_put_contents($pathname, "bla, bla, bla\n");
+        }
+
+
+		exec("php ".$_SERVER["PWD"]."/".$_SERVER["PHP_SELF"]." /tmp/smartfind_test/dir_3 --testing ".$test['params'],$output);
+
+	}
+
+	function loadTests()
+	{
+		$this->tests[]=array("params"=>"--type=file","results"=>"/tmp/smartfind_test/dir_1/file_1_1#/tmp/smartfind_test/dir_1/file_1_2#/tmp/smartfind_test/file_2#/tmp/smartfind_test/dir_2/file_2_2#/tmp/smartfind_test/dir_2/dir_2_1/file_2_1_1#/tmp/smartfind_test/dir_2/file_2_1#/tmp/smartfind_test/file_1");
+
+		$this->tests[]=array("params"=>"--type=file,dir","results"=>"/tmp/smartfind_test/dir_1/file_1_1#/tmp/smartfind_test/dir_1/file_1_2#/tmp/smartfind_test/file_2#/tmp/smartfind_test/dir_2/file_2_2#/tmp/smartfind_test/dir_2/dir_2_1/file_2_1_1#/tmp/smartfind_test/dir_2/file_2_1#/tmp/smartfind_test/file_1#/tmp/smartfind_test/dir_1#/tmp/smartfind_test/dir_2#/tmp/smartfind_test/dir_2/dir_2_1#/tmp/smartfind_test/dir_2/dir_2_2");
+
+		$this->tests[]=array("params"=>"--type=link","results"=> "/tmp/smartfind_test/link");
+
+		$this->tests[]=array("params"=>"--type=file -L", "results"=> "/tmp/smartfind_test/dir_1/file_1_1#/tmp/smartfind_test/dir_1/file_1_2#/tmp/smartfind_test/file_2#/tmp/smartfind_test/link/file_3#/tmp/smartfind_test/link/file_2#/tmp/smartfind_test/link/dir_2/file_2_2#/tmp/smartfind_test/link/dir_2/file_2_1#/tmp/smartfind_test/link/file_1#/tmp/smartfind_test/dir_2/file_2_2#/tmp/smartfind_test/dir_2/dir_2_1/file_2_1_1#/tmp/smartfind_test/dir_2/file_2_1#/tmp/smartfind_test/file_1");
+
+		$this->tests[]=array("params"=>"--type=file --isempty","results"=> "/tmp/smartfind_test/dir_1/file_1_1#/tmp/smartfind_test/dir_2/dir_2_1/file_2_1_1#/tmp/smartfind_test/dir_2/file_2_1#/tmp/smartfind_test/file_1");
+
+		$this->tests[]=array("params"=> "--type=file -L --isempty","results"=> "/tmp/smartfind_test/dir_1/file_1_1#/tmp/smartfind_test/link/file_3#/tmp/smartfind_test/link/dir_2/file_2_1#/tmp/smartfind_test/link/file_1#/tmp/smartfind_test/dir_2/dir_2_1/file_2_1_1#/tmp/smartfind_test/dir_2/file_2_1#/tmp/smartfind_test/file_1");
+
+		$this->tests[]=array("params"=> "--type=dir --isempty", "results"=> "/tmp/smartfind_test/dir_2/dir_2_2");
+
+		$this->tests[]=array("params"=> "--type=file,dir --isempty", "results"=> "/tmp/smartfind_test/dir_1/file_1_1#/tmp/smartfind_test/dir_2/dir_2_1/file_2_1_1#/tmp/smartfind_test/dir_2/file_2_1#/tmp/smartfind_test/file_1#/tmp/smartfind_test/dir_2/dir_2_2");
+
+		$this->tests[]=array("params"=> "--type=file --isnotempty", "results"=> "/tmp/smartfind_test/dir_1/file_1_2#/tmp/smartfind_test/file_2#/tmp/smartfind_test/dir_2/file_2_2");
+
+		$this->tests[]=array("params"=> "--type=dir --isnotempty", "results"=> "/tmp/smartfind_test/dir_1#/tmp/smartfind_test/dir_2#/tmp/smartfind_test/dir_2/dir_2_1");
+
+		$this->tests[]=array("params"=> "--type=file --mtime=7", "results"=> "/tmp/smartfind_test/dir_1/file_1_2#/tmp/smartfind_test/file_2#/tmp/smartfind_test/dir_2/dir_2_1/file_2_1_1#/tmp/smartfind_test/dir_2/file_2_1#/tmp/smartfind_test/file_1");
+
+		$this->tests[]=array("params"=> "--type=file --maxload=0.2", "results"=>"/tmp/smartfind_test/dir_1/file_1_1#/tmp/smartfind_test/dir_1/file_1_2#/tmp/smartfind_test/file_2#/tmp/smartfind_test/dir_2/file_2_2#/tmp/smartfind_test/dir_2/dir_2_1/file_2_1_1#/tmp/smartfind_test/dir_2/file_2_1#/tmp/smartfind_test/file_1#WARNING: load average is too high, wait please#WARNING: load average is too high, wait please#WARNING: load average is too high, wait please#WARNING: load average is too high, wait please#WARNING: load average is too high, wait please#WARNING: load average is too high, wait please#WARNING: load average is too high, wait please");
+
+		$this->tests[]=array("params"=> "--type=file --df_monitor=/ --df_limit=".(disk_free_space("/")-100000), "results" => "ERROR: disk free space is lower than imposed limit: ");
+
+		$this->tests[]=array("params"=> "--type=file --skipbylist=/tmp/smartfind_test/dir_1/file_1_2", "results" =>'/tmp/smartfind_test/dir_1/file_1_1#/tmp/smartfind_test/dir_1/file_1_2');
+
+		$this->tests[]=array("params"=> "--type=file --batch_size=3 --pause=1", "results"=>"/tmp/smartfind_test/dir_1/file_1_1#/tmp/smartfind_test/dir_1/file_1_2#/tmp/smartfind_test/file_2#/tmp/smartfind_test/dir_2/file_2_2#/tmp/smartfind_test/dir_2/dir_2_1/file_2_1_1#/tmp/smartfind_test/dir_2/file_2_1#/tmp/smartfind_test/file_1#Done 12 items, sleeping 1 seconds...#Done 15 items, sleeping 1 seconds...#Done 18 items, sleeping 1 seconds...#Done 21 items, sleeping 1 seconds...#Done 3 items, sleeping 1 seconds...#Done 6 items, sleeping 1 seconds...#Done 9 items, sleeping 1 seconds...");
+
+	}
+
+	function makeTest($test)
+	{
+		echo "\ndoing test #".$this->test_n.":\n";
+		$this->test_n++;
+		echo $test['params']."...";
+		exec("php ".$_SERVER["PWD"]."/".$_SERVER["PHP_SELF"]." /tmp/smartfind_test/ --testing ".$test['params'],$output);
+		sort($output);
+		$expected=explode("#",$test['results']);
+		sort($expected);
+
+		foreach($output as $key => $val)
+		{
+			$output[$key]=preg_replace("/([0-9]*\.*[0-9]* <= [0-9]*)/","",$val);
+		}
+
+		if($output==$expected)
+		{
+			echo "\t[OK]\n";
+			return(true);
+		}
+		else
+		{
+			echo "\t[ERROR]\nEXPECTED:".implode("\n\t",$expected)."\n\nOUTPUT:".implode("\n\t",$output);
+		}
+	}
+}
+
+// Commented source-code:
+// http://pwfisher.com/nucleus/index.php?itemid=45
+function parseArgs($argv)
+{
+    array_shift($argv); $o = array();
+    foreach ($argv as $a){
+        if (substr($a,0,2) == '--'){ $eq = strpos($a,'=');
+            if ($eq !== false){ $o[substr($a,2,$eq-2)] = substr($a,$eq+1); }
+            else { $k = substr($a,2); if (!isset($o[$k])){ $o[$k] = true; } } }
+        else if (substr($a,0,1) == '-'){
+            if (substr($a,2,1) == '='){ $o[substr($a,1,1)] = substr($a,3); }
+            else { foreach (str_split(substr($a,1)) as $k){ if (!isset($o[$k])){ $o[$k] = true; } } } }
+        else { $o[] = $a; } }
+    return $o;
+}
+
+
+
+$args=parseArgs($argv);
+$smartfind= new SmartFind($args);
+
+
+?>

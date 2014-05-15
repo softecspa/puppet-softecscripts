@@ -1,0 +1,7 @@
+#Managed by puppet using modules/softecscripts/files/antibrote-nagios.softecspa.it/etc/cron.d/menarini
+
+#cron di gestione Nagios
+#invio report degli alert ricevuti nella settimana precedente
+0 9 * * 1 root /usr/local/bin/report_alert.pl
+#report degli uptime dei servizi e dei backup nel mese precedente
+0 9 1 * * root /usr/local/bin/report_uptime.pl

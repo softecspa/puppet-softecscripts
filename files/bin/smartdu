@@ -1,0 +1,63 @@
+#!/usr/bin/php
+<?php
+
+if (!isset($argv) or !is_array($argv) or !isset($argv[1]))
+{
+    echo "\nSyntax: $argv[0] <path>\n\n";
+    exit(1);
+}
+
+$path=$argv[1];
+
+if (!is_dir($path)) die("Path needed\n\n");
+
+function format_bytes($size)
+{
+    $units = array(' B', ' KB', ' MB', ' GB', ' TB');
+    for ($i = 0; $size >= 1024 && $i < 4; $i++) 
+        $size /= 1024;
+    return round($size, 2).$units[$i];
+}
+
+
+
+
+
+$ite=new RecursiveDirectoryIterator($path);
+$objects = new RecursiveIteratorIterator($ite);
+//$objects->setMaxDepth(0);
+
+$bytestotal=0;
+$nbfiles=0;
+try
+{
+    foreach ($objects as $name=>$obj)
+    {
+        try
+        {
+            if (($obj->getFilename()=='.') or ($obj->getFilename()=='..'))
+                continue;
+            if ($obj->isFile())
+            {
+                $filesize=$obj->getSize();
+                $bytestotal+=$filesize;
+            }
+            $nbfiles++;
+            $depth=$objects->getDepth();
+            list($load1, $load5, $load15) = sys_getloadavg();
+            $memory = memory_get_usage(TRUE)/(1024*1024);
+            //echo "$depth. [$load1] {$memory}Mb #> $name => $filesize\n";
+        }
+        catch (RuntimeException $e)
+        {
+            echo "errore Runtime\n";
+        }
+    }
+}
+catch (UnexpectedValueException $e)
+{
+        printf("Directory [%s] contained a directory we can not recurse into", $directory);
+}
+
+echo "Total: $nbfiles items, ".format_bytes($bytestotal)."\n";
+?>

@@ -1,0 +1,314 @@
+#!/usr/bin/perl -s
+#
+# Copyright 2007-2010 Timothy Kay
+# http://timkay.com/nway/
+# You are welcome to use this script [without any warranty express or implied]
+# provided you retain my copyright notice and, when possible, a link to my website.
+#
+
+# THIS PROGRAM IS OFFERED WITHOUT ANY WARRANTY EXPRESSED OR
+# IMPLIED. NO WARRANTY OF FITNESS FOR A PARTICULAR PURPOSE IS OFFERED.
+# THE USER ASSUMES THE ENTIRE RISK OF USING THE PROGRAM.  ANY
+# LIABILITY OF SELLER OR MANUFACTURE IS LIMITED EXCLUSIVELY TO REFUND
+# OF THE PURCHASE PRICE.
+
+$program_version = "1.03";
+
+
+use IO::File;
+use File::Temp qw(tempfile tempdir);
+
+
+{
+    $n ||= nproc();
+    die "usage: $0 [-v] [--file] [-n=N (default $n)] [--sort[=OPTIONS]] [--output=OUTFILE] [--part[=SIZE]] FILE COMMAND\nversion: v$program_version\n" if !@ARGV;
+
+    $File::Temp::DEBUG = 1 if $v >= 2;
+
+    $tmp = $T || $ {"-temporary-directory"} || "/tmp";
+
+    $output = $o || $ {"-output"};
+    $output = "" if $output == 1;
+    # --output causes $output to be set to 1
+    # In this case, we want to create $tempdir, so test is "defined $output"
+    # but we want to write to STDOUT, so the test is "$output"
+
+    $part = $ {"-part"};
+
+    my $pid = $$;
+    my $file = shift @ARGV;
+    my $command = "@ARGV";
+
+    my($temp_fh, $temp_fn);
+
+    if ($t)
+    {
+	# create a temporary file
+	($temp_fh, $temp_fn) = tempfile("nway-file-XXXXXXXX", DIR => $tmp, UNLINK => 0);
+
+	if ($file =~ /^(?:ftp|http|https):\/\//i)
+	{
+	    print STDERR "nway: fetching $file --> $temp_fn\n" if $v;
+	    system "curl @{[$v? '--progress': '-s -S']} --fail '@{[curlq($file)]}' -o $temp_fn";
+	    die "$file: error 0x@{[sprintf '%04x', $?]}" if $?;
+	}
+
+	if ($file eq "-" || $file =~ /\|$/)
+	{
+	    print STDERR "nway: copying: $file --> $temp_fn\n" if $v;
+	    local @ARGV = $file;
+	    while (defined (my $line = <>))
+	    {
+		print $temp_fh $line;
+	    }
+	    $temp_fh->flush;
+	}
+
+	$file = $temp_fn;
+    }
+
+    $file = "curl -s -S '@{[curlq($file)]}'|" if $file =~ /^(?:ftp|http|https):\/\//i;
+
+
+    my(@file);
+
+    if ($file !~ /\|$/ && $file =~ /[\*\?\[\{]/)
+    {
+	@file = glob($file);
+	die if @file < 2;
+	die if @file > $n;
+	$n = @file;
+    }
+
+
+    print STDERR "nway: using $n concurrent processes\n" if $v;
+
+    my $sort = $ {"-sort"};
+    my $sortopt = $sort;
+    $sortopt = "" if $sort == 1;
+    my $sortbuf = "--buffer-size={{int(75/{n})}}%" if $sortopt !~ /-S|--buffer-size=/;
+    my $sorttmp = "--temporary-directory=$tmp" if $sortopt !~ /-T|--temporary-directory=/;
+    
+
+    my($tempdir);
+
+    if ($sort || defined $output)
+    {
+	$tempdir = tempdir("nway-XXXXXXXX", DIR => $tmp, CLEANUP => 1);
+
+	if ($sort)
+	{
+	    $command .= " |" if $command;
+	    $command .= "sort $sortbuf $sorttmp $sortopt";
+	}
+	else
+	{
+	    $command ||= "cat";
+	}
+
+	$command .= " >$tempdir/nway-{i}.txt";
+    }
+
+
+    if ($file eq "-" || $file =~ /\|$/)
+    {
+	my @out = map {open_out($_, rewrite($command, {pid => $pid, n => $n, i => $_}))} 0..$n - 1;
+
+	# schedule temp file to be unlinked after all child processes
+	# have been created, so that the child processes don't delete
+	# the file
+	File::Temp::_deferred_unlink($temp_fh, $temp_fn, 0) if $temp_fn;
+
+	local @ARGV = $file;
+	for (my $i = 0; ; $i++)
+	{
+	    my $line = <>;
+	    last if !defined($line);
+	    print {$out[$i % $n]} $line;
+	}
+
+	# Need to flush because leaving scope causes the handles to be
+	# flushed/closed one-by-one, and it waits for each one to
+	# finish before flushing/closing next one.  Thus, so we lose
+	# parallelism.  (Many pending requests can be in a each
+	# buffer, and Perl would finish each buffer's worth of
+	# requests serially before flushing/closing the next buffer.)
+
+	for (@out)
+	{
+	    select($_);
+	    $| = 1;
+	}
+
+	select(STDOUT);
+    }
+    else
+    {
+	for (my $i = 0; $i < $n; $i++)
+	{
+	    my $child = fork();
+	    if ($child == 0)
+	    {
+		# earlier versions of File::Temp are missing a check, so
+		# will delete temp files and directories when the child exits
+                *File::Temp::rmtree = sub {print STDERR "nway: child process not calling rmtree(@_)\n" if $v >= 3};
+
+		if (@file)
+		{
+		    local $ENV{NWAY} = $i;
+		    open(STDIN, $file[$i]) or die "$file[$i]: $!\n";
+		    exec rewrite($command, {pid => $pid, n => $n, i => $i});
+		}
+		else
+		{
+		    my $in = IO::File->new($file) or die "$file: $!";
+		    $in->seek(0, 2);
+		    my $size = $in->tell;
+
+		    my $offset0 = int(($size + $n - 1) / $n) * $i;
+		    my $offset1 = int(($size + $n - 1) / $n) * ($i + 1);
+
+		    $in->seek($offset0, 0);
+
+		    scalar <$in> if $i;
+
+		    if (my $scatter = $ {"-scatter"})
+		    {
+			my $tell = $in->tell;
+
+			my $io = IO::File->new($scatter) or die "$scatter: $!\n";
+			$io->seek(0, 2);
+
+			my $a = 0;
+			my $b = $io->tell / 5;
+
+			my($m) = int(($a + $b) / 2);
+
+			while ($a < $b)
+			{
+			    $m = int(($a + $b) / 2);
+			    $io->seek(5 * $m, 0);
+			    my $n = $io->read(my $buf, 5);
+			    die if $n != 5;
+			    my $o = unpack(Q, "$buf\0\0\0");
+			    last if $o == $tell;
+			    $a = $m if $o < $tell;
+			    $b = $m if $o > $tell;
+			}
+
+			$ENV{NWAY_LINE} = $m;
+		    }
+
+		    my $out = open_out($i, rewrite($command, {pid => $pid, n => $n, i => $i}));
+
+		    for (;;)
+		    {
+			last if $in->tell > $offset1;
+			my $line = <$in>;
+			last if !defined($line);
+			print $out $line;
+		    }
+		}
+
+		exit;
+	    }
+	}
+
+	# schedule temp file to be unlinked after all child processes
+	# have been created, so that the child processes don't delete
+	# the file
+	File::Temp::_deferred_unlink($temp_fh, $temp_fn, 0) if $temp_fn;
+    }
+
+    for (my $i = 0; $i < $n; $i++)
+    {
+	my $pid = wait;
+    }
+
+    print STDERR "\n" if $newline;
+
+
+    # merge results
+
+    if ($tempdir)
+    {
+	my $ofn = $part? "$output.part": $output;
+	my($what, $cmd);
+
+	if ($sort)
+	{
+	    $what = "merging";
+	    $cmd = "sort --merge $sortopt";
+	}
+	else
+	{
+	    $what = "copying";
+	    $cmd = "cat";
+	}
+
+	$cmd .= " $tempdir/nway-0.txt"					if $n == 1;
+	$cmd .= " $tempdir/nway-{" . join(",", 0 .. $n - 1) . "}.txt"	if $n > 1;
+	$cmd .= " >$ofn" if $output;
+
+	print STDERR "nway: $what: $cmd\n" if $v;
+	system $cmd;
+
+	if ($output && $part)
+	{
+	    my($size, $unit) = $part =~ /^(\d+)(\w*)$/;
+	    die "--part=$part: bad format\n" unless $size || $unit !~ /^(?:|b|k|m|g)$/;
+	    $size *= 1024 * 1024 * 1024	if $unit eq "g";
+	    $size *= 1024 * 1024		if $unit eq "m";
+	    $size *= 1024			if $unit eq "k";
+	    if (-s $ofn >= $size)
+	    {
+		rename($ofn, $output);
+	    }
+	    else
+	    {
+		die "$ofn: @{[-s $ofn]} bytes is smaller than --part=$part bytes (not renamed)\n";
+	    }
+	}
+    }
+}
+
+
+sub rewrite
+{
+    my($command, $item) = @_;
+    for ($command)
+    {
+	s/{([^\{]+?)}/$item->{$1}/g;
+	s/{{(.*?)}}/@{[eval $1]}/g;
+    }
+    $command;
+}
+
+
+sub open_out
+{
+    local $ENV{NWAY} = shift;
+    print STDERR "nway: starting $ENV{NWAY}: @_\n" if $v;
+    open(my $out, "|-", @_) or die "open: $! (@_)\n";
+    $out;
+}
+
+
+sub nproc
+{
+    local @ARGV = "/proc/cpuinfo";
+    my($n);
+    while (<>)
+    {
+	$n += /^processor\s*:/;
+    }
+    $n || 1;
+}
+
+
+sub curlq
+{
+    my($s) = @_;
+    $s =~ s/\'/\'\\\'\'/g;
+    $s;
+}

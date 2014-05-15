@@ -1,0 +1,113 @@
+#!/bin/bash
+
+#########################################################
+# Lorenzo Cocchi <lorenzo.cocchi@softecspa.it>          #
+# Gestione autonoma della pulizia della cache del WSDL  #
+#########################################################
+
+#########################################################
+# NON toccare ###########################################
+set -e
+LANG=C
+IFS=$' \t\n'
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+##########################################################
+
+. $(dirname $(readlink -f $0))/../lib/bash/softec-common.sh || exit
+
+SELF=$(basename $0)
+CMD="/bin/rm"
+CMD_OPTS="-v"
+
+WSDL_WILDCARD="/tmp/wsdl-*"
+WSDL_PATTERN="^/tmp/wsdl(-[a-z.-]+)?-[a-z0-9]{32}$"
+
+##########################################################
+
+warn()
+{
+    local MSG="$1"
+    log_debug "${MSG}"
+}
+
+die()
+{
+    local MSG="$1"
+    local E=${2-1}
+    log_error "${MSG}"
+    exit ${E}
+}
+
+usage() {
+    cat <<EOF
+NAME
+    ${SELF}
+
+    Clear cache WSDL,
+        delete files /tmp/wsdl-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+OPTIONS
+    -h  This help.
+    -i  Prompt before every removal.
+    -t  Print the results of commands without delete any files.
+
+USAGE
+    sudo ${SELF}
+    sudo ${SELF} -i
+    sudo ${SELF} -t
+
+EOF
+}
+
+while getopts :hit OPT; do
+    case ${OPT} in
+        h)
+            usage
+            exit 0
+            ;;
+        i)
+            CONFIRM='true'
+            ;;
+        t)
+            TESTMODE='true'
+            ;;
+        \?)
+            "ERROR: invalid option: -${OPTARG}"
+            usage
+            exit 1
+            ;;
+        :)
+            echo "ERROR: option -$OPTARG requires an argument..."
+            exit 1
+            ;;
+    esac
+done
+
+log "${SELF} started by ${SUDO_USER}";
+
+shift $((OPTIND -1))
+
+if [ -z "${SUDO_USER}" ]; then
+    usage
+    die
+fi
+
+if [ "x${CONFIRM}" == "xtrue" ]; then
+    CMD_OPTS="${CMD_OPTS} -i"
+fi
+
+for f in $(ls ${WSDL_WILDCARD} 2>/dev/null); do
+    if (echo ${f} | egrep -q ${WSDL_PATTERN}); then
+        if [ "x${TESTMODE}" == "xtrue" ]; then
+            [ -f ${f} ] && echo "Remove ${f}"
+        else
+            [ -f ${f} ] && ${CMD} ${CMD_OPTS} ${f}
+        fi
+    else
+        warn "${WSDL_FILE} file(s) NOT found :-("
+        exit 0
+    fi
+done
+
+log "${SELF} executed successfully"

@@ -1,0 +1,3 @@
+#Managed by puppet using modules/softecscripts/files/binocolo02.softecspa.it/etc/cron.d/clean-wsdl-sessions
+#25/03/2014 asagratini RXL-846-23552
+0 1 root find /tmp/ -type f -name 'wsdl-*' -mtime +1 -delete

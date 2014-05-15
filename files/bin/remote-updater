@@ -1,0 +1,71 @@
+#!/bin/bash
+
+# inclusione libreria
+. $(dirname $(realpath $0))/../lib/bash/softec-common.sh || exit
+
+# Required params
+REMOTE_URL=$1
+DEST_FILE=$2
+
+# Optional param
+ACTION=$3
+PERMS=$4
+OWNER=$5
+GROUP=$6
+
+TEMP_FILE="$(/bin/mktemp)"
+
+if [ $# -lt 2 ]; then
+    log_error "Missing parameters"
+    exit 2
+fi
+
+if [ -z $REMOTE_URL ]; then
+    log_error "Missing parameter REMOTE_URL"
+    exit 2
+fi
+
+if [ -z $DEST_FILE ]; then
+    log_error "Missing parameter REMOTE_URL"
+    exit 2
+fi
+
+if [ ! -d $(/usr/bin/dirname "$DEST_FILE") ]; then
+    log_error "Directory that must contain $DEST_FILE does not exists"
+    exit 2
+fi
+
+log_debug "Starting download of $REMOTE_URL -> $TEMP_FILE"
+/usr/bin/wget -q -O $TEMP_FILE $REMOTE_URL
+
+if ! diff -q $TEMP_FILE $DEST_FILE; then
+    log "Updating $DEST_FILE with $TEMP_FILE..."
+    cp -b $TEMP_FILE "$DEST_FILE"
+    
+    if [ -n "$PERMS" ]; then
+        /bin/chmod $PERMS "$DEST_FILE"
+        log_debug "Set perms on $DEST_FILE"
+    fi
+
+    if [ -n "$OWNER" ]; then
+        /bin/chown $OWNER "$DEST_FILE"
+        log_debug "Set owner $OWNER on $DEST_FILE"
+    fi
+
+    if [ -n "$GROUP" ]; then
+        /bin/chgrp $GROUP "$DEST_FILE"
+        log_debug "Set group $GROUP on $DEST_FILE"
+    fi
+
+    if [ -n "$ACTION" ]; then
+        log "Running post-update action:"
+        $ACTION
+    fi
+else
+    log_debug "Nothing todo files are identical"
+fi
+
+[ -f $TEMP_FILE ] && rm -f $TEMP_FILE
+
+log_debug "End of execution"
+

@@ -1,0 +1,12 @@
+# GENERATED WITH PUPPET using $HeadURL: https://svn.softecspa.it/sistemi/puppet/trunk/modules/softecscripts/files/softec_scripts_logrotate $
+# $Id: softec_scripts_logrotate 5604 2012-03-15 08:12:53Z f.pizzurro $
+
+/var/local/log/* 
+{
+        weekly
+        missingok
+        rotate 12
+        compress
+        notifempty
+        create 644 root root
+}

@@ -1,0 +1,76 @@
+#!/bin/bash
+
+##############################################################################
+# Lorenzo Cocchi                                                             #
+# - Wrapper per log_parser.py + nagios status per check passivo              #
+##############################################################################
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+DATE="$(date +%c)"
+
+HOST_NAME="menarini01"
+SVC_DESC="Log Parser ieulagay.tr"
+OK_CODE="0"
+ER_CODE="2"
+NAGIOS_SERVER="nagios.softecspa.it"
+OUTPUT="performed ${DATE}"
+
+ACCESS_LOG="/var/www/web4/log/web.log"
+
+LOG_PARSER_DIR="/var/log/parser"
+LOG_PARSER_LOG="${LOG_PARSER_DIR}/log_parser.log"
+LOG_PARSER_ERR="${LOG_PARSER_DIR}/log_parser.error.log"
+LOG_PARSER_BIN="/usr/local/bin/log_parser"
+LOG_REPORT="/var/log/parser/logreport_$(date +%F_%H-%M-%S).txt"
+
+SUBJETC="Log Parser for \"ieulagay.tr\""
+# 18/02/2013 lcocchi EPR-589-75811: 
+#  variato indirizzo da `YMeteris@ieulagay.com.tr` a `YInan@ieulagay.com.tr`
+TO="YInan@ieulagay.com.tr"
+
+##############################################################################
+
+umask 0077
+renice 19 -p $$ >/dev/null
+
+if [ ${UID} -eq "0" ]; then
+    ionice -c 3 -p$$
+fi
+
+if [ ! -d ${LOG_PARSER_DIR} ]; then
+    mkdir -p ${LOG_PARSER_DIR}
+fi
+
+if [ ! -x ${LOG_PARSER_BIN} ]; then
+    echo "${LOG_PARSER_BIN}: Not found or Not executables"
+    exit 1
+fi
+
+# Python Parser
+${LOG_PARSER_BIN} --accesslog=${ACCESS_LOG} --reportlog=${LOG_REPORT} --ftp-enable \
+    > ${LOG_PARSER_LOG} 2> ${LOG_PARSER_ERR}
+
+RETVAL=$?
+
+if  [ ${RETVAL} -eq 0 ] && [ ! -s ${LOG_PARSER_ERR} ]; then
+    # Se lo scritp esce con 0 e se il file degli errori non ha
+    #  dimensione + grande di 0 invia l'OK al Nagios una e-mail
+    #  di notifica e cancella i log + vecchi di N giorni.
+    echo -e "${HOST_NAME}\t${SVC_DESC}\t${OK_CODE}\tOK - ${OUTPUT}\n" | \
+        send_nsca -H ${NAGIOS_SERVER} >/dev/null
+
+    echo -e "${DATE}\n${SVC_DESC} successfully\nexit code ${RETVAL}" | \
+       mutt -s "${SUBJETC} successfully" ${TO}
+
+    find ${LOG_PARSER_DIR} -name "logreport*.txt" -mtime +7 -delete
+else
+    # Altrimenti invia il CRITICAL al Nagios e invia il file 
+    #  di errori tramite e-mail.
+    echo -e "${HOST_NAME}\t${SVC_DESC}\t${ER_CODE}\tCRITICAL - ${OUTPUT}\n" | \
+        send_nsca -H ${NAGIOS_SERVER} >/dev/null
+
+    echo -e "${DATE}\n${SVC_DESC} FAILED\nexit code ${RETVAL}" | \
+       mutt -s "${SUBJETC} FAILED" ${TO} -a ${LOG_PARSER_ERR}
+fi
+

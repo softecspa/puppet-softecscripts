@@ -1,0 +1,164 @@
+#!/bin/bash
+
+# Questo valore e' molto importante,
+# permette di identificare files/directory con caratteri accentati
+export LC_ALL=it_IT.utf8
+
+TODAY=$(date +'%Y%m%d')
+SOURCEPATH="/mnt"
+
+LOCKFILE="/var/lock/backup-lepka.lock"
+trap "rm -f ${LOCKFILE}" SIGINT SIGQUIT SIGTERM
+
+MOUNTPOINT="/mnt/disco-usb-backup-one"
+DESTPATH="$MOUNTPOINT/backup/lepka"
+
+DESTDIR="${DESTPATH}/${TODAY}"
+
+RENICE="/usr/bin/renice"
+SMARTFIND="/usr/local/bin/smartfind"
+
+CP="/bin/cp"
+CP_OPTS="-auv --parents"
+IONICE="/usr/bin/ionice"
+
+$RENICE 19 -p $$ >/dev/null
+$IONICE -c3 -p $$
+
+##07/12/2011 - Fx - Ticket 630 - aggiungo l'invio del check nagios
+NAGIOS_SERVER='tiglio.softecspa.it'
+NSCA='/usr/sbin/send_nsca'
+
+sab=5
+dom=6
+lun=0 # full backup
+mar=1
+mer=2
+gio=3
+ven=4
+
+# 16/05/2011 - Fx - Aggiungo un file di lock per evitare che si accavallino i backup
+#                   Rimuovo il lockfile se +vecchio di 1440 minuti (24h)
+find ${LOCKFILE%/*} -name ${LOCKFILE##*/} -cmin +1440 -exec rm -f '{}' \;
+
+if [ -e $LOCKFILE ]
+then
+    echo "ERROR: already runnig..." >&2;
+    echo -e "aspalo09\tbackup_full_disco_usb_clusterlepka\t2\tAlready running" | $NSCA -H $NAGIOS_SERVER >/dev/null
+    exit 1
+else
+    touch $LOCKFILE
+fi
+
+if [ ! -d $DESTPATH ]
+then
+    mount $MOUNTPOINT
+    if [ ! -d $DESTPATH ]
+    then
+        echo "ERROR: USB disk not mounted. Cannot mount $MOUNTPOINT..." >&2;
+        echo -e "aspalo09\tbackup_full_disco_usb_clusterlepka\t2\tERROR: USB disk not mounted. Cannot mount $MOUNTPOINT..." | $NSCA -H $NAGIOS_SERVER >/dev/null
+        exit 1
+    fi
+fi
+
+
+DAY_OF_WEEK="$(date +%a)"
+
+case ${DAY_OF_WEEK} in
+    dom)
+        MTIME="--mtime=${dom}"
+    LABEL="mtime${dom}"
+    ;;
+    lun)
+        MTIME=""
+    LABEL="full"
+    ;;
+    mar)
+        MTIME="--mtime=${mar}"
+    LABEL="mtime${mar}"
+    ;;
+    mer)
+        MTIME="--mtime=${mer}"
+    LABEL="mtime${mer}"
+    ;;
+    gio)
+        MTIME="--mtime=${gio}"
+    LABEL="mtime${gio}"
+    ;;
+    ven)
+        MTIME="--mtime=${ven}"
+    LABEL="mtime${ven}"
+    ;;
+    sab)
+        MTIME="--mtime=${sab}"
+    LABEL="mtime${sab}"
+    ;;
+    *)
+        echo "ERROR: Can't match day of week" >&2; rm $LOCKFILE; exit 1 ;;
+esac
+
+DESTDIR="${DESTDIR}-${LABEL}"
+[ ! -d "${DESTDIR}" ] && mkdir -p "${DESTDIR}"
+
+SOURCEDIR="vol_lepka"
+LOGFILE="${DESTDIR}/${SOURCEDIR}-backup.log"
+LOGERR="${DESTDIR}/${SOURCEDIR}-backup.err"
+
+${SMARTFIND} "${SOURCEPATH}/${SOURCEDIR}" --type=file,link ${MTIME} \
+        --skipdirbyregex="/web\d+\/(phptmp|log|web\/cache)/" --skipdirlist=/usr/local/etc/backup-lepka.conf --df_monitor=${MOUNTPOINT} \
+        -a --md5after --copy-to=${DESTDIR} -v > ${LOGFILE} 2> ${LOGERR}
+
+# Valore di uscita dello smartfind
+RETVAL=$?
+
+# mtime del find
+#25/10/2011 - Fx - prevedo 28 gg di mantenimento dei backup quindi 4 full + 20 incrementali. Se il monitoraggio dovesse segnalare un'occupazione eccessiva di spazio diminuire a 21 gg
+#09/11/2011 - Fx - Aumento la retention a 60 giorni visto che ora il disco è da 2 TB
+#17/07/2012 - asagratini, #826, abbasso la retention a 3 settimane
+xDAYS="15"
+DELETE_LOG="${DESTDIR}/delete-backup.log"
+
+# la fase di cancellazione viene eseguita solo se lo smartfind esce con 0 (zero)
+if [ "${RETVAL}" -ne "0" ]; then
+    echo "`date` - smartfind FAILED, exit code ${RETVAL}" >> ${DELETE_LOG};
+    #Invia un critical a nagios
+    echo -e "aspalo09\tbackup_full_disco_usb_clusterlepka\t2\tBackup non eseguito" | $NSCA -H $NAGIOS_SERVER >/dev/null
+    rm $LOCKFILE
+    exit 1
+fi
+
+# 12/07/2011 Fx ticket 630 - invio un OK al check nagios. Da rivedere facendo
+# si che lo smartfind logghi diversamente gli errori e che possa essere
+# controllato se tutti i file sono stati copiati correttamente.
+echo -e "aspalo09\tbackup_full_disco_usb_clusterlepka\t0\tUltimo backup eseguito `date +%d/%m/%Y` `date +%T`" | $NSCA -H $NAGIOS_SERVER >/dev/null
+
+cd ${DESTPATH} 2>/dev/null || \
+    { echo "`date` - cd ${DESTPATH}: FAILED" >> ${DELETE_LOG}; exit 1; };
+
+if [ "`pwd`" == "${DESTPATH}" ]; then
+    for target in `find . -maxdepth 1 -regextype posix-egrep -regex "./[0-9]{8}-(mtime[0-9]|full)?" -type d -mtime +${xDAYS}`
+    do
+        TARGET="${DESTPATH}/${target#./}"
+        echo "`date` - start delete ${TARGET}" >> ${DELETE_LOG}
+
+        /bin/rm -rf "${target}" 2>/dev/null
+        RETVAL=$?
+
+        if [ "${RETVAL}" -eq "0" ]; then
+            echo "`date` - end delete ${TARGET}" >> ${DELETE_LOG}
+        else
+            echo "`date` - delete ${TARGET} FAILED, exit code ${RETVAL}" >> ${DELETE_LOG}
+        fi
+
+        echo "`date` - MARK -" >> ${DELETE_LOG}
+        unset TARGET
+
+        sleep 180
+    done
+fi
+
+rm $LOCKFILE
+
+exit 0
+
+# END

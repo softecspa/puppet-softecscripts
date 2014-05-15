@@ -1,0 +1,43 @@
+#!/bin/bash
+
+. $(dirname $(readlink -f $0))/../lib/bash/softec-common.sh || exit
+
+#LOGLEVEL=$LOGLEVEL_DEBUG
+EXPECTED_ARGS=1
+E_BADARGS=65
+
+ensure_bin test
+ensure_bin stat
+ensure_bin date 
+
+function help()
+{
+    echo -e "\nSYNTAX:\n"
+    echo -e "\t$0 <FILE>\n"
+    echo -e "\tReturn the number of seconds since the last change on file <FILE>\n\n"
+}
+
+if [ $# -ne $EXPECTED_ARGS ]
+then
+    help
+    exit $E_BADARGS
+fi
+
+FILE_TO_CHECK=$1
+
+if [ ! -f $FILE_TO_CHECK ]; then
+    log_error "File to check '$FILE_TO_CHECK' does not exists!"
+    quit 2
+fi
+
+# Time of last modification, seconds since Epoch
+LAST_CHANGE_TIMESTAMP=$(stat -L --format %Y $FILE_TO_CHECK)
+
+# Current time, in seconds since Epoch
+NOW=$(date +%s)
+
+# Seconds from last modification of FILE_TO_CHECK
+SECONDS_FROM_LAST_CHANGE=$(( $NOW - $LAST_CHANGE_TIMESTAMP ))
+
+echo $SECONDS_FROM_LAST_CHANGE
+
