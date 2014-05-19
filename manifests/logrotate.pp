@@ -7,9 +7,9 @@ class softecscripts::logrotate {
     options      => [ 'missingok', 'compress', 'notifempty' ],
     archive      => true,
     olddir       => '/var/local/log/archives/softecscripts',
-    olddir_owner => 'root',
-    olddir_group => 'super',
-    olddir_mode  => '664',
-    create       => '664 root super',
+    olddir_owner => $softecscripts::logrotate_olddir_owner,
+    olddir_group => $softecscripts::logrotate_olddir_group,
+    olddir_mode  => $softecscripts::logrotate_olddir_mode,
+    create       => "${softecscripts::logrotate_olddir_mode} ${softecscripts::logrotate_olddir_owner} ${softecscripts::logrotate_olddir_group}",
   }
 }

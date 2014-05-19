@@ -1,4 +1,14 @@
-class softecscripts {
+class softecscripts (
+  $logdir_owner           = 'root',
+  $logdir_group           = 'adm',
+  $logdir_mode            = '2750',
+  $logrotate_olddir_owner = 'root',
+  $logrotate_olddir_group = 'adm',
+  $logrotate_olddir_mode  = '0750',
+  $logrotate_create_owner = 'root',
+  $logrotate_create_group = 'adm',
+  $logrotate_create_mode  = '0664'
+){
 
   include php5::cli
   include softecscripts::logrotate
@@ -24,11 +34,18 @@ class softecscripts {
     group   => root,
   }
 
+  $require = $logdir_group ? {
+    'adm'   => undef,
+    'root'  => undef,
+    default => Group[$logdir_group]
+  }
+
   file { '/var/local/log':
     ensure  => directory,
-    mode    => 02775,
-    group   => super,
-    require => Group['super'],
+    owner   => $logdir_owner,
+    mode    => $logdir_mode,
+    group   => $logdir_group,
+    require => $require,
   }
 
   # richiede readlink, sendmail, flock
