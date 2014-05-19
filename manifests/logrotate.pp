@@ -1,5 +1,12 @@
 class softecscripts::logrotate {
 
+  file {'/var/local/log/archives/':
+    ensure  => directory,
+    owner   => $softecscripts::logrotate_olddir_owner,
+    group   => $softecscripts::logrotate_olddir_group,
+    mode    => $softecscripts::logrotate_olddir_mode
+  }
+
   logrotate::file { 'softecscripts':
     log          => '/var/local/log/*.log',
     interval     => 'weekly',
@@ -11,5 +18,6 @@ class softecscripts::logrotate {
     olddir_group => $softecscripts::logrotate_olddir_group,
     olddir_mode  => $softecscripts::logrotate_olddir_mode,
     create       => "${softecscripts::logrotate_olddir_mode} ${softecscripts::logrotate_olddir_owner} ${softecscripts::logrotate_olddir_group}",
+    require       => File['/var/local/log/archives/']
   }
 }
