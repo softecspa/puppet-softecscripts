@@ -17,7 +17,7 @@ class softecscripts::logrotate {
     olddir_owner => $softecscripts::logrotate_olddir_owner,
     olddir_group => $softecscripts::logrotate_olddir_group,
     olddir_mode  => $softecscripts::logrotate_olddir_mode,
-    create       => "${softecscripts::logrotate_olddir_mode} ${softecscripts::logrotate_olddir_owner} ${softecscripts::logrotate_olddir_group}",
+    create       => "${softecscripts::logrotate_create_mode} ${softecscripts::logrotate_create_owner} ${softecscripts::logrotate_create_group}",
     require       => File['/var/local/log/archives/']
   }
 }
