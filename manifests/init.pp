@@ -103,9 +103,4 @@ class softecscripts (
     source  => 'puppet:///modules/softecscripts/bin/meminfo.pl',
     require => Package['perl'],
   }
-
-  file { '/usr/local/bin/root_device':
-    source  => 'puppet:///modules/softecscripts/bin/root_device',
-    require => File['/usr/local/lib/bash'],
-  }
 }
