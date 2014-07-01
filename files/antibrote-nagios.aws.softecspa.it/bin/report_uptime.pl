@@ -7,7 +7,7 @@ use WWW::Mechanize;     #libwww-mechanize-perl
 use DateTime;           #libdatetime-perl
 use Getopt::Long;
 
-my $mailto = "notifiche\@softecspa.it";
+my $mailto = "alessandro.sagratini\@softecspa.it, lorenzo.cocchi\@softecspa.it";
 
 GetOptions("mailto|m:s" => \$mailto);
 
