@@ -1,0 +1,3 @@
+Cmnd_Alias WSDL=/usr/local/bin/clear-cache-wsdl
+
+%super ALL=NOPASSWD: WSDL

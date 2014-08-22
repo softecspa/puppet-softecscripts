@@ -69,19 +69,9 @@ class softecscripts (
     require => File['/usr/local/lib/bash/softec-common.sh'],
   }
 
-  softec_sudo::alias {'WSDL':
-    sudo_alias  => 'Cmnd_Alias',
-    items       => '/usr/local/bin/clear-cache-wsdl',
-    target      => '/etc/sudoers.d/wsdl'
+  softec_sudo::conf {'wsdl':
+    source  => 'puppet:///modules/softecscripts/etc/sudo'
   }
-
-  softec_sudo::spec {'wsdl':
-    users     => '%super',
-    hosts     => 'ALL',
-    commands  => 'NOPASSWD: WSDL',
-    target    => '/etc/sudoers.d/wsdl',
-  }
-
 
   file { '/usr/local/bin/smartfind':
     source  => 'puppet:///modules/softecscripts/bin/smartfind',
