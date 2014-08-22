@@ -1,0 +1,3 @@
+Cmnd_Alias  HPING3  =/usr/sbin/hping3
+
+nagios  ALL=(ALL) NOPASSWD: HPING3
