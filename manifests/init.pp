@@ -69,7 +69,7 @@ class softecscripts (
     require => File['/usr/local/lib/bash/softec-common.sh'],
   }
 
-  softec_sudo::conf {'wsdl':
+  softec_sudo::conf {'softecscripts':
     source  => 'puppet:///modules/softecscripts/etc/sudo'
   }
 

@@ -1,3 +1,7 @@
-Cmnd_Alias WSDL=/usr/local/bin/clear-cache-wsdl
+Host_Alias      GEMINI      = gemini01, gemini02
 
-%super ALL=NOPASSWD: WSDL
+Cmnd_Alias      WSDL        =/usr/local/bin/clear-cache-wsdl
+Cmnd_Alias      GLUSTERFS   =/usr/lib/nagios/plugins/contrib/check_glusterfs_vol.sh
+
+%super  ALL=NOPASSWD: WSDL
+%nagios GEMINI = NOPASSWD:GLUSTERFS
