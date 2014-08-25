@@ -92,8 +92,13 @@ def main():
         sys.exit('%s' % e)
 
     # s3cmd aliases
-    s3cmd = 's3cmd -n' if dryrun else 's3cmd'
-    s3sync = ('%s sync --no-progress -H' % (s3cmd))
+    s3cmd = '/usr/local/bin/_s3cmd/s3cmd'
+
+    if dryrun is True:
+        s3cmd = ('%s -n' % (s3cmd))
+
+    s3cmd_opts = 'sync multipart --multipart-chunk-size-mb=5000 --no-progress -H'
+    s3sync = ('%s %s' % (s3cmd, s3cmd_opts))
 
     # object
     s3 = boto.connect_s3()
@@ -220,7 +225,7 @@ def main():
                 boto.exception.S3CreateError
             ) as e:
                 msg_err = ('Failed create_bucket(%s): %s %s, %s' %
-                          (bucket, e.status, e.reason, e.error_code))
+                           (bucket, e.status, e.reason, e.error_code))
                 to_stderr(msg_err)
                 nsca.service_result(nsca_svc_host, nsca_svc_desc, 2, msg_err)
                 continue
@@ -249,6 +254,7 @@ def main():
         to_stdout('== Sync %s to %s ==' % (path, s3path))
         sync_ok = False
         for count in range(0, synctimes):
+            # print(s3sync, path, s3path)
             s_out, s_err = sh.run(str_join(s3sync, path, s3path))[:2]
             if s_err:
                 to_stderr('Sync (try=%s) %s to %s: %s' % (count, path,
