@@ -1,0 +1,288 @@
+#!/usr/bin/env python
+
+"""Copia e ruota gli archivi di AutoMysqlBackup su S3.
+
+Utilizzo:
+    ~$ MYLIBDIR=PATH/lib python pys3sync.py -c PATH/pys3sync.conf
+    ~$ MYLIBDIR=PATH/lib python pys3sync.py -c PATH/pys3sync.conf -n
+    ~$ MYLIBDIR=PATH/lib python pys3sync.py -c PATH/pys3sync.conf \
+        --pattern='^backup_Cluster(Asp|Dev)$'
+
+Autore:
+    Lorenzo Cocchi <lorenzo.cocchi@softecspa.it>
+
+Attenzione:
+    Managed by Puppet
+"""
+
+import os
+import sys
+
+libpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lib')
+try:
+    sys.path.insert(0, os.path.realpath(os.environ['MYLIBDIR']))
+except KeyError:
+    sys.path.insert(0, libpath)
+
+import argparse
+import boto
+import configparser
+import shell
+import sys
+import datetime
+import time
+import sendnsca
+# import glacier
+from pyutils import human_time, str_join, to_stderr, to_stdout
+
+__version__ = '0.1'
+
+
+def parse_argv():
+    desc = 'Python sync MySQL backup to S3'
+    parsearg = argparse.ArgumentParser(description=desc)
+
+    parsearg.add_argument(
+        '-c', '--config', action='store', dest='config',
+        help='config file, default /usr/local/etc/pys3sync.conf',
+        type=str, default='/usr/local/etc/pys3sync.conf')
+
+    parsearg.add_argument(
+        '-p', '--pattern', action='store', dest='pattern',
+        help="regexp for [section], default \'^backup_.+\'",
+        type=str, default='^backup_.+')
+
+    parsearg.add_argument(
+        '-n', '--dry-run', action='store_true', dest='dryrun',
+        help='dryrun mode', default=False)
+
+    parsearg.add_argument(
+        '-s', '--sleep', action='store', dest='timesleep',
+        help='sleep between iterations, default 15s', type=int, default=15)
+
+    parsearg.add_argument(
+        '-t', '--try-sync-times', action='store', dest='synctimes',
+        help='try syncing multiple times, default 3', type=int, default=3)
+
+    parsearg.add_argument(
+        '-v', '--version', action='version',
+        version='%(prog)s ' + __version__)
+
+    return parsearg.parse_args()
+
+
+def main():
+    args = parse_argv()
+    (config,
+     pattern,
+     dryrun,
+     timesleep,
+     synctimes) = (args.config,
+                   args.pattern,
+                   args.dryrun,
+                   args.timesleep,
+                   args.synctimes)
+
+    if synctimes < 0 and synctimes > 3:
+        sys.exit('--try-sync-times must be between 0 and 3')
+
+    try:
+        parser = configparser.Parser(config)
+    except (IOError, RuntimeError) as e:
+        sys.exit('%s' % e)
+
+    # s3cmd aliases
+    s3cmd = '/usr/local/bin/_s3cmd/s3cmd'
+
+    if dryrun is True:
+        s3cmd = ('%s -n' % (s3cmd))
+
+    s3cmd_opts = 'sync multipart --multipart-chunk-size-mb=5000 --no-progress -H'
+    s3sync = ('%s %s' % (s3cmd, s3cmd_opts))
+
+    # object
+    s3 = boto.connect_s3()
+    sh = shell.Shell()
+
+    # notifiche nsca
+    global_nsca = parser.get_namevalue(
+        parser.get_sections(pattern='^nsca$')[0])
+
+    (nsca_nagios_host,
+     nsca_cmd) = (global_nsca['nsca_nagios_host'],
+                  global_nsca['nsca_cmd'])
+
+    try:
+        nsca = sendnsca.SendNsca(nsca_nagios_host, nsca_cmd)
+    except OSError as e:
+        sys.exit(e)
+
+    # lifecycle del bucket
+    global_bucket_lifecycle = parser.get_namevalue(
+        parser.get_sections(pattern='^bucket_lifecycle$')[0])
+
+    (glf_days,
+     glf_rule_name,
+     glf_key_prefix,
+     glf_enable,
+     glf_expiration,
+     glf_status) = (global_bucket_lifecycle['lifecycle_transition_days'],
+                    global_bucket_lifecycle['lifecycle_rule_name'],
+                    global_bucket_lifecycle['lifecycle_key_prefix'],
+                    global_bucket_lifecycle['lifecycle_enable'],
+                    global_bucket_lifecycle['lifecycle_expiration'],
+                    global_bucket_lifecycle['lifecycle_status'],)
+
+    # sezioni dei cluster
+    sections = parser.get_sections(pattern=pattern)
+
+    # variabili dalle sezioni dei cluster e iterazione
+    for section in sections:
+        d = parser.get_namevalue(section)
+        (desc,
+         path,
+         period,
+         bucket,
+         folder) = (d['desc'],
+                    d['backup_path'],
+                    d['backup_period'],
+                    d['s3bucket'],
+                    d['s3folder'],)
+
+        (nsca_svc_host,
+         nsca_svc_desc) = (d['nsca_svc_host'],
+                           d['nsca_svc_desc'])
+
+        (slf_days,
+         slf_rule_name,
+         slf_key_prefix,
+         slf_enable,
+         slf_expiration,
+         slf_status) = (d['lifecycle_transition_days'],
+                        d['lifecycle_rule_name'],
+                        d['lifecycle_key_prefix'],
+                        d['lifecycle_enable'],
+                        d['lifecycle_expiration'],
+                        d['lifecycle_status'],)
+
+        # inizio
+        to_stdout('= %s - started at %s =' % (desc, time.ctime(time.time())))
+
+#        # lifecycle rules (glacier)
+#        lf_transition = slf_days if slf_days else glf_days
+#        lf_name = slf_rule_name if slf_rule_name else glf_rule_name
+#        lf_prefix = slf_key_prefix if slf_key_prefix else glf_key_prefix
+#        lf_enable = slf_enable if slf_enable else glf_enable
+#        lf_expiration = slf_expiration if slf_expiration else glf_expiration
+#        lf_status = slf_status if slf_status else glf_status
+#        lf_transition = int(lf_transition)
+#        lf_expiration = int(lf_expiration)
+#
+#        if lf_enable == 'yes':
+#            # msg format
+#            lf_format_pre = '%s Lifecycle Rule id:%s'
+#            lf_format_post = 'transition:%s, prefix:%s, expiration:%s'
+#            lf_format = '== %s, %s ==' % (lf_format_pre, lf_format_post)
+#            try:
+#                lf = glacier.LifecycleRules(s3, bucket)
+#            except glacier.LifecycleRulesError as e:
+#                to_stderr('glacier.__init__: %s' % e)
+#            else:
+#                try:
+#                    rule_pattern = ('^%s$' % lf_name)
+#                    rule = lf.get_rules(pattern=rule_pattern)
+#                except glacier.LifecycleRules as e:
+#                    to_stderr('glacier.get_rules(): %s' % e)
+#                else:
+#                    set_rule = True
+#                    rule_status = 'Exists'
+#                    if lf_name not in rule:
+#                        try:
+#                            lf.set_rule(lf_name, lf_transition, lf_prefix,
+#                                        lf_status, lf_expiration)
+#                        except glacier.LifecycleRules as e:
+#                            to_stderr('glacier.set_rule() %s' % e)
+#                            set_rule = False
+#                        else:
+#                            rule_status = 'Add'
+#                    if set_rule:
+#                        rule = lf.get_rules(pattern=rule_pattern)
+#                        r = rule[lf_name]
+#                        to_stdout(lf_format % (rule_status, r.id,
+#                                               r.transition_days,
+#                                               r.prefix,r.expiration_days))
+
+        # costruzione del bucket_name per s3cmd
+        s3bucket = 's3://%s' % (bucket)
+
+        # se non esiste il bucket prova a crearlo
+        if s3.lookup(bucket) is None:
+            try:
+                s3.create_bucket(bucket)
+                to_stdout('Create bucket %s' % bucket)
+            except (
+                boto.exception.S3ResponseError,
+                boto.exception.S3CreateError
+            ) as e:
+                msg_err = ('Failed create_bucket(%s): %s %s, %s' %
+                           (bucket, e.status, e.reason, e.error_code))
+                to_stderr(msg_err)
+                nsca.service_result(nsca_svc_host, nsca_svc_desc, 2, msg_err)
+                continue
+
+        # desfinizione del bucket di destinazione
+        today = datetime.datetime.today().strftime('%Y/%m/%d')
+        if folder:
+            s3path = ('%s/%s/%s/' % (s3bucket, folder, today))
+        else:
+            s3path = ('%s/%s/' % (s3bucket, today))
+
+        path = os.path.join(path, period.strip())
+        # check sul PATH locale, se no lo trova continua l'iterazione
+        if os.path.exists(path):
+            path = ('%s/' % path)
+        else:
+            msg_err = ('No such file or directory: %s' % path)
+            to_stderr(msg_err)
+            nsca.service_result(nsca_svc_host, nsca_svc_desc, 2, msg_err)
+            continue
+
+        to_stdout('== S3 bucket "%s" ==' % bucket)
+        start_time = time.time()
+
+        # sync dal PATH locale al bucket su S3, ci prova N volte
+        to_stdout('== Sync %s to %s ==' % (path, s3path))
+        sync_ok = False
+        for count in range(0, synctimes):
+            # print(s3sync, path, s3path)
+            s_out, s_err = sh.run(str_join(s3sync, path, s3path))[:2]
+            if s_err:
+                to_stderr('Sync (try=%s) %s to %s: %s' % (count, path,
+                                                          s3path,
+                                                          s_err))
+                # stampo comunque anche stdout
+                to_stdout(s_out)
+                time.sleep(5)
+                continue
+            else:
+                if s_out or not s_err:
+                    to_stdout(s_out)
+                    sync_ok = True
+                break
+
+        date_now = ('%s' % datetime.datetime.now())
+        if not sync_ok:
+            msg_err = ('Executed with errors at %s' % date_now)
+            nsca.service_result(nsca_svc_host, nsca_svc_desc, 2, msg_err)
+        else:
+            msg_ok = ('Successfully executed at %s' % date_now)
+            nsca.service_result(nsca_svc_host, nsca_svc_desc, 0, msg_ok)
+
+        end_time = time.time()
+        to_stdout('Completed in %s' % human_time((end_time - start_time)))
+        to_stdout('Sleep %ss\n' % (timesleep))
+        time.sleep(timesleep)
+
+
+if __name__ == '__main__':
+    main()
