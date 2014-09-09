@@ -43,7 +43,7 @@ def parse_argv():
     parsearg.add_argument(
         '-c', '--config', action='store', dest='config',
         help='config file, default /usr/local/etc/pys3sync.conf',
-        type=str, default='/usr/local/etc/pys3sync.conf')
+        type=str, default='/usr/local/etc/s3sync.conf')
 
     parsearg.add_argument(
         '-p', '--pattern', action='store', dest='pattern',
