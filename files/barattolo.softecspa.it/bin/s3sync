@@ -103,12 +103,10 @@ def main():
     s3 = boto.connect_s3()
 
     # notifiche nsca
-    global_nsca = parser.get_namevalue(
-        parser.get_sections(pattern='^nsca$')[0])
+    global_nsca = parser.get_dict(parser.get_sections(pattern='^nsca$')[0])
 
-    (nsca_nagios_host,
-     nsca_cmd) = (global_nsca['nsca_nagios_host'],
-                  global_nsca['nsca_cmd'])
+    (nsca_nagios_host, nsca_cmd) = (global_nsca['nsca_nagios_host'],
+                                    global_nsca['nsca_cmd'])
 
     try:
         nsca = sendnsca.SendNsca(nsca_nagios_host, nsca_cmd)
@@ -120,7 +118,7 @@ def main():
 
     # variabili dalle sezioni dei cluster e iterazione
     for section in sections:
-        d = parser.get_namevalue(section)
+        d = parser.get_dict(section)
         (desc,
          path,
          period,
