@@ -30,6 +30,7 @@ try:
 except ImportError as e:
     raise sys.exit('Import Error: %s' % e)
 
+import glob
 import time
 
 __version__ = '0.1'
@@ -160,6 +161,8 @@ def main():
             s3path = ('%s/%s/' % (s3bucket, today))
 
         path = os.path.join(path, period.strip())
+        items = glob.glob('{0}/{1}'.format(path, '*'))
+
         # check sul PATH locale, se no lo trova continua l'iterazione
         if os.path.exists(path):
             path = ('%s/' % path)
@@ -175,22 +178,24 @@ def main():
         # sync dal PATH locale al bucket su S3, ci prova N volte
         to_stdout('== Sync %s to %s ==' % (path, s3path))
         sync_ok = False
-        for count in range(0, synctimes):
-            # print(s3sync, path, s3path)
-            s_out, s_err = sh.run(str_join(s3sync, path, s3path))[:2]
-            if s_err:
-                to_stderr('Sync (try=%s) %s to %s: %s' % (count, path,
-                                                          s3path,
-                                                          s_err))
-                # stampo comunque anche stdout
-                to_stdout(s_out)
-                time.sleep(5)
-                continue
-            else:
-                if s_out or not s_err:
+
+        for item in items:
+            for count in range(0, synctimes):
+                # print(str_join(s3sync, item, s3path))
+                s_out, s_err = sh.run(str_join(s3sync, item, s3path))[:2]
+                if s_err:
+                    to_stderr('Sync (try=%s) %s to %s: %s' % (count, item,
+                                                              s3path,
+                                                              s_err))
+                    # stampo comunque anche stdout
                     to_stdout(s_out)
-                    sync_ok = True
-                break
+                    time.sleep(5)
+                    continue
+                else:
+                    if s_out or not s_err:
+                        to_stdout(s_out)
+                        sync_ok = True
+                    break
 
         date_now = ('%s' % datetime.datetime.now())
         if not sync_ok:
