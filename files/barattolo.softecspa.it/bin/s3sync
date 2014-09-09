@@ -2,40 +2,38 @@
 
 """Copia e ruota gli archivi di AutoMysqlBackup su S3.
 
-Utilizzo:
-    ~$ MYLIBDIR=PATH/lib python pys3sync.py -c PATH/pys3sync.conf
-    ~$ MYLIBDIR=PATH/lib python pys3sync.py -c PATH/pys3sync.conf -n
-    ~$ MYLIBDIR=PATH/lib python pys3sync.py -c PATH/pys3sync.conf \
-        --pattern='^backup_Cluster(Asp|Dev)$'
-
-Autore:
-    Lorenzo Cocchi <lorenzo.cocchi@softecspa.it>
-
-Attenzione:
-    Managed by Puppet
+Uso:
+    s3sync.py -c PATH/pys3sync.conf
+    s3sync.py -c PATH/pys3sync.conf -n
+    s3sync.py -c PATH/pys3sync.conf --pattern='^backup_Cluster(Asp|Dev)$'
 """
 
 import os
 import sys
 
-libpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lib')
+libpath = '/usr/local/lib/softec-python'
+
 try:
     sys.path.insert(0, os.path.realpath(os.environ['MYLIBDIR']))
 except KeyError:
     sys.path.insert(0, libpath)
 
-import argparse
-import boto
-import configparser
-import shell
-import sys
-import datetime
+try:
+    import argparse
+    import boto
+    import libconfigparser2 as configparser
+    import libsh as sh
+    import sys
+    import datetime
+    import libsendnsca as sendnsca
+    from libutils import human_time, str_join, to_stderr, to_stdout
+except ImportError as e:
+    raise sys.exit('Import Error: %s' % e)
+
 import time
-import sendnsca
-# import glacier
-from pyutils import human_time, str_join, to_stderr, to_stdout
 
 __version__ = '0.1'
+__author__ = 'Lorenzo Cocchi <lorenzo.cocchi@softecspa.it>'
 
 
 def parse_argv():
@@ -54,7 +52,7 @@ def parse_argv():
 
     parsearg.add_argument(
         '-n', '--dry-run', action='store_true', dest='dryrun',
-        help='dryrun mode', default=False)
+        help='dryrun mode')
 
     parsearg.add_argument(
         '-s', '--sleep', action='store', dest='timesleep',
@@ -88,21 +86,21 @@ def main():
 
     try:
         parser = configparser.Parser(config)
-    except (IOError, RuntimeError) as e:
+    except (configparser.ParserError) as e:
         sys.exit('%s' % e)
 
     # s3cmd aliases
-    s3cmd = '/usr/local/bin/_s3cmd/s3cmd'
+    s3cmd = 's3cmd'
 
     if dryrun is True:
         s3cmd = ('%s -n' % (s3cmd))
 
-    s3cmd_opts = 'sync multipart --multipart-chunk-size-mb=5000 --no-progress -H'
+    s3cmd_opts = ('sync multipart --multipart-chunk-size-mb=5000 '
+                  '--no-progress -H')
     s3sync = ('%s %s' % (s3cmd, s3cmd_opts))
 
     # object
     s3 = boto.connect_s3()
-    sh = shell.Shell()
 
     # notifiche nsca
     global_nsca = parser.get_namevalue(
@@ -116,22 +114,6 @@ def main():
         nsca = sendnsca.SendNsca(nsca_nagios_host, nsca_cmd)
     except OSError as e:
         sys.exit(e)
-
-    # lifecycle del bucket
-    global_bucket_lifecycle = parser.get_namevalue(
-        parser.get_sections(pattern='^bucket_lifecycle$')[0])
-
-    (glf_days,
-     glf_rule_name,
-     glf_key_prefix,
-     glf_enable,
-     glf_expiration,
-     glf_status) = (global_bucket_lifecycle['lifecycle_transition_days'],
-                    global_bucket_lifecycle['lifecycle_rule_name'],
-                    global_bucket_lifecycle['lifecycle_key_prefix'],
-                    global_bucket_lifecycle['lifecycle_enable'],
-                    global_bucket_lifecycle['lifecycle_expiration'],
-                    global_bucket_lifecycle['lifecycle_status'],)
 
     # sezioni dei cluster
     sections = parser.get_sections(pattern=pattern)
@@ -153,64 +135,8 @@ def main():
          nsca_svc_desc) = (d['nsca_svc_host'],
                            d['nsca_svc_desc'])
 
-        (slf_days,
-         slf_rule_name,
-         slf_key_prefix,
-         slf_enable,
-         slf_expiration,
-         slf_status) = (d['lifecycle_transition_days'],
-                        d['lifecycle_rule_name'],
-                        d['lifecycle_key_prefix'],
-                        d['lifecycle_enable'],
-                        d['lifecycle_expiration'],
-                        d['lifecycle_status'],)
-
         # inizio
         to_stdout('= %s - started at %s =' % (desc, time.ctime(time.time())))
-
-#        # lifecycle rules (glacier)
-#        lf_transition = slf_days if slf_days else glf_days
-#        lf_name = slf_rule_name if slf_rule_name else glf_rule_name
-#        lf_prefix = slf_key_prefix if slf_key_prefix else glf_key_prefix
-#        lf_enable = slf_enable if slf_enable else glf_enable
-#        lf_expiration = slf_expiration if slf_expiration else glf_expiration
-#        lf_status = slf_status if slf_status else glf_status
-#        lf_transition = int(lf_transition)
-#        lf_expiration = int(lf_expiration)
-#
-#        if lf_enable == 'yes':
-#            # msg format
-#            lf_format_pre = '%s Lifecycle Rule id:%s'
-#            lf_format_post = 'transition:%s, prefix:%s, expiration:%s'
-#            lf_format = '== %s, %s ==' % (lf_format_pre, lf_format_post)
-#            try:
-#                lf = glacier.LifecycleRules(s3, bucket)
-#            except glacier.LifecycleRulesError as e:
-#                to_stderr('glacier.__init__: %s' % e)
-#            else:
-#                try:
-#                    rule_pattern = ('^%s$' % lf_name)
-#                    rule = lf.get_rules(pattern=rule_pattern)
-#                except glacier.LifecycleRules as e:
-#                    to_stderr('glacier.get_rules(): %s' % e)
-#                else:
-#                    set_rule = True
-#                    rule_status = 'Exists'
-#                    if lf_name not in rule:
-#                        try:
-#                            lf.set_rule(lf_name, lf_transition, lf_prefix,
-#                                        lf_status, lf_expiration)
-#                        except glacier.LifecycleRules as e:
-#                            to_stderr('glacier.set_rule() %s' % e)
-#                            set_rule = False
-#                        else:
-#                            rule_status = 'Add'
-#                    if set_rule:
-#                        rule = lf.get_rules(pattern=rule_pattern)
-#                        r = rule[lf_name]
-#                        to_stdout(lf_format % (rule_status, r.id,
-#                                               r.transition_days,
-#                                               r.prefix,r.expiration_days))
 
         # costruzione del bucket_name per s3cmd
         s3bucket = 's3://%s' % (bucket)
@@ -220,10 +146,8 @@ def main():
             try:
                 s3.create_bucket(bucket)
                 to_stdout('Create bucket %s' % bucket)
-            except (
-                boto.exception.S3ResponseError,
-                boto.exception.S3CreateError
-            ) as e:
+            except (boto.exception.S3ResponseError,
+                    boto.exception.S3CreateError) as e:
                 msg_err = ('Failed create_bucket(%s): %s %s, %s' %
                            (bucket, e.status, e.reason, e.error_code))
                 to_stderr(msg_err)
