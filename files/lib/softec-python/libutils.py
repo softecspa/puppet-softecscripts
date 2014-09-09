@@ -25,8 +25,8 @@ def human_time(seconds):
 
 
 def str_join(*args):
-    """Join of strings."""
-    return ' '.join(args)
+    """iterble to string."""
+    return ' '.join(str(i) for i in args)
 
 
 def timestamp_to_localtime(seconds, time_format=None):
@@ -81,8 +81,8 @@ def human_size(size_in_bytes):
     Returns: string
     """
     if size_in_bytes == 1:
-        #return "1 byte"
-        return "%s %s" % (float(1), 'B')
+        # return "1 byte"
+        return '%s %s' % (float(1), 'B')
 
     suffixes_table = [
         ('B', 0), ('kiB', 0), ('MiB', 1), ('GiB', 2), ('TiB', 2),
@@ -96,7 +96,7 @@ def human_size(size_in_bytes):
         num /= 1024.0
 
     if precision == 0:
-        formatted_size = "%d" % num
+        formatted_size = '%d' % num
     else:
         formatted_size = str(round(num, ndigits=precision))
 
