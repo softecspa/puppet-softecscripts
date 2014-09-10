@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
-"""Copia e ruota gli archivi di AutoMysqlBackup su S3.
+"""Copia gli archivi di AutoMysqlBackup su S3.
 
 Uso:
-    s3sync.py -c PATH/pys3sync.conf
-    s3sync.py -c PATH/pys3sync.conf -n
-    s3sync.py -c PATH/pys3sync.conf --pattern='^backup_Cluster(Asp|Dev)$'
+    s3sync.py -c pys3sync.conf
+    s3sync.py -c pys3sync.conf -n
+    s3sync.py -c pys3sync.conf --pattern='^backup_Cluster(Asp|Dev)$'
 """
 
 import os
@@ -30,6 +30,7 @@ try:
 except ImportError as e:
     raise sys.exit('Import Error: %s' % e)
 
+# import glob
 import time
 
 __version__ = '0.1'
@@ -55,15 +56,19 @@ def parse_argv():
         help='dryrun mode')
 
     parsearg.add_argument(
-        '-s', '--sleep', action='store', dest='timesleep',
-        help='sleep between iterations, default 15s', type=int, default=15)
+        '-v', '--verbose', action='store_true', dest='verbose',
+        help='verbose')
 
     parsearg.add_argument(
-        '-t', '--try-sync-times', action='store', dest='synctimes',
+        '-s', '--sleep', action='store', dest='timesleep',
+        help='sleep between iterations, default 10s', type=int, default=10)
+
+    parsearg.add_argument(
+        '-t', '--sync-times', action='store', dest='sync_times',
         help='try syncing multiple times, default 3', type=int, default=3)
 
     parsearg.add_argument(
-        '-v', '--version', action='version',
+        '-V', '--version', action='version',
         version='%(prog)s ' + __version__)
 
     return parsearg.parse_args()
@@ -75,13 +80,15 @@ def main():
      pattern,
      dryrun,
      timesleep,
-     synctimes) = (args.config,
-                   args.pattern,
-                   args.dryrun,
-                   args.timesleep,
-                   args.synctimes)
+     verbose,
+     sync_times) = (args.config,
+                    args.pattern,
+                    args.dryrun,
+                    args.timesleep,
+                    args.verbose,
+                    args.sync_times)
 
-    if synctimes < 0 and synctimes > 3:
+    if sync_times < 0 and sync_times > 3:
         sys.exit('--try-sync-times must be between 0 and 3')
 
     try:
@@ -89,20 +96,15 @@ def main():
     except (configparser.ParserError) as e:
         sys.exit('%s' % e)
 
-    # s3cmd aliases
-    s3cmd = 's3cmd'
+    s3cmd = 's3cmd -v' if verbose is True else 's3cmd'
+    s3cmd = ('%s -n' % (s3cmd)) if dryrun is True else s3cmd
+    s3cmd_opts = ('sync --no-progress -H')
+    s3cmd = ('%s %s' % (s3cmd, s3cmd_opts))
 
-    if dryrun is True:
-        s3cmd = ('%s -n' % (s3cmd))
-
-    s3cmd_opts = ('sync multipart --multipart-chunk-size-mb=5000 '
-                  '--no-progress -H')
-    s3sync = ('%s %s' % (s3cmd, s3cmd_opts))
-
-    # object
+    # boto
     s3 = boto.connect_s3()
 
-    # notifiche nsca
+    # notifiche al Nagios
     global_nsca = parser.get_dict(parser.get_sections(pattern='^nsca$')[0])
 
     (nsca_nagios_host, nsca_cmd) = (global_nsca['nsca_nagios_host'],
@@ -113,10 +115,10 @@ def main():
     except OSError as e:
         sys.exit(e)
 
-    # sezioni dei cluster
+    # sezioni
     sections = parser.get_sections(pattern=pattern)
 
-    # variabili dalle sezioni dei cluster e iterazione
+    # variabili dalle sezioni, iterazione e nsca
     for section in sections:
         d = parser.get_dict(section)
         (desc,
@@ -134,7 +136,7 @@ def main():
                            d['nsca_svc_desc'])
 
         # inizio
-        to_stdout('= %s - started at %s =' % (desc, time.ctime(time.time())))
+        to_stdout('= %s - %s starting =' % (desc, time.ctime(time.time())))
 
         # costruzione del bucket_name per s3cmd
         s3bucket = 's3://%s' % (bucket)
@@ -146,10 +148,10 @@ def main():
                 to_stdout('Create bucket %s' % bucket)
             except (boto.exception.S3ResponseError,
                     boto.exception.S3CreateError) as e:
-                msg_err = ('Failed create_bucket(%s): %s %s, %s' %
-                           (bucket, e.status, e.reason, e.error_code))
-                to_stderr(msg_err)
-                nsca.service_result(nsca_svc_host, nsca_svc_desc, 2, msg_err)
+                msg = ('Failed create_bucket(%s): %s %s, %s' %
+                       (bucket, e.status, e.reason, e.error_code))
+                to_stderr(msg)
+                nsca.service_result(nsca_svc_host, nsca_svc_desc, 2, msg)
                 continue
 
         # desfinizione del bucket di destinazione
@@ -160,30 +162,40 @@ def main():
             s3path = ('%s/%s/' % (s3bucket, today))
 
         path = os.path.join(path, period.strip())
+
         # check sul PATH locale, se no lo trova continua l'iterazione
         if os.path.exists(path):
             path = ('%s/' % path)
         else:
-            msg_err = ('No such file or directory: %s' % path)
-            to_stderr(msg_err)
-            nsca.service_result(nsca_svc_host, nsca_svc_desc, 2, msg_err)
+            msg = ('No such file or directory: %s' % path)
+            to_stderr(msg)
+            nsca.service_result(nsca_svc_host, nsca_svc_desc, 2, msg)
             continue
+
+        # processiamo i singoli elementi, in questo modo siamo abbiamo piu'
+        #  velocita' su directory con un numero elevato di elementi
+        # items = glob.glob('%s/%s' % (path, '*'))
 
         to_stdout('== S3 bucket "%s" ==' % bucket)
         start_time = time.time()
 
-        # sync dal PATH locale al bucket su S3, ci prova N volte
+        # sync degli elementi sul bucket su S3, ci prova N volte
         to_stdout('== Sync %s to %s ==' % (path, s3path))
         sync_ok = False
-        for count in range(0, synctimes):
-            # print(s3sync, path, s3path)
-            s_out, s_err = sh.run(str_join(s3sync, path, s3path))[:2]
+
+        for count in range(0, sync_times):
+            if verbose is True:
+                to_stdout(str_join(s3cmd, path, s3path))
+
+            s_out, s_err = sh.run(str_join(s3cmd, path, s3path))[:2]
             if s_err:
-                to_stderr('Sync (try=%s) %s to %s: %s' % (count, path,
+                to_stderr('Sync (try=%s) %s to %s: %s' % (count,
+                                                          path,
                                                           s3path,
                                                           s_err))
-                # stampo comunque anche stdout
-                to_stdout(s_out)
+                if s_out:
+                    to_stdout(s_out)
+
                 time.sleep(5)
                 continue
             else:
@@ -193,11 +205,12 @@ def main():
                 break
 
         date_now = ('%s' % datetime.datetime.now())
-        if not sync_ok:
-            msg_err = ('Executed with errors at %s' % date_now)
+        if sync_ok is not True:
+            msg_err = ('%s: errors' % date_now)
             nsca.service_result(nsca_svc_host, nsca_svc_desc, 2, msg_err)
-        else:
-            msg_ok = ('Successfully executed at %s' % date_now)
+
+        if sync_ok is True:
+            msg_ok = ('%s: successfully' % date_now)
             nsca.service_result(nsca_svc_host, nsca_svc_desc, 0, msg_ok)
 
         end_time = time.time()
