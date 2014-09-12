@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 """Copia gli archivi di AutoMysqlBackup su S3.
 
@@ -26,7 +27,7 @@ try:
     import sys
     import datetime
     import libsendnsca as sendnsca
-    from libutils import human_time, str_join, to_stderr, to_stdout
+    from libutils import human_time, to_stderr, to_stdout
 except ImportError as e:
     raise sys.exit('Import Error: %s' % e)
 
@@ -141,7 +142,7 @@ def main():
                            d['nsca_svc_desc'])
 
         # inizio
-        to_stdout('= %s - %s =' % (desc, time.ctime(time.time())))
+        to_stdout('= %s - %s =' % (time.ctime(time.time()), desc))
 
         # costruzione del bucket_name per s3cmd
         s3bucket = 's3://%s' % (bucket)
@@ -161,6 +162,7 @@ def main():
 
         # desfinizione del bucket di destinazione
         today = datetime.datetime.today().strftime('%Y/%m/%d')
+
         if folder:
             s3path = ('%s/%s/%s/' % (s3bucket, folder, today))
         else:
@@ -190,9 +192,12 @@ def main():
 
         for item in items:
             for count in range(1, sync_times):
-                out, err, retcode = sh.run(str_join(s3cmd, item, s3path))[:3]
+                cmd = ('%s %s %s' % (s3cmd, item, s3path)).encode('utf-8')
+
                 if verbose is True:
-                    to_stdout('exec: %s' % str_join(s3cmd, item, s3path))
+                    to_stdout('exec: %s' % cmd)
+
+                out, err, retcode = sh.run(cmd)[:3]
 
                 if retcode != 0:
                     to_stderr('try=%s' % count)
