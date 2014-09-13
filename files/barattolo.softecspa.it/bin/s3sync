@@ -121,10 +121,11 @@ def main():
     except OSError as e:
         sys.exit(e)
 
-    # sezioni
-    sections = parser.get_sections(pattern=pattern)
+    to_stdout('%s Start' % datetime.datetime.now())
 
     # variabili dalle sezioni, iterazione e nsca
+    sections = parser.get_sections(pattern=pattern)
+
     for section in sections:
         d = parser.get_dict(section)
         (desc,
@@ -141,7 +142,6 @@ def main():
          nsca_svc_desc) = (d['nsca_svc_host'],
                            d['nsca_svc_desc'])
 
-        # inizio
         to_stdout('= %s - %s =' % (time.ctime(time.time()), desc))
 
         # costruzione del bucket_name per s3cmd
@@ -179,14 +179,14 @@ def main():
             nsca.service_result(nsca_svc_host, nsca_svc_desc, 2, msg)
             continue
 
-        # processiamo i singoli elementi, in questo modo siamo abbiamo piu'
-        #  velocita' su directory con un numero elevato di elementi
+        # processiamo i singoli elementi, in questo modo abbiamo piu'
+        #  velocita' su directory con numero elevato di elementi
         items = glob.glob('%s/%s' % (path, '*'))
 
-        to_stdout('== S3 bucket "%s" ==' % bucket)
+        to_stdout('== bucket %s ==' % bucket)
         start_time = time.time()
 
-        # sync degli elementi sul bucket su S3, ci prova N volte
+        # sync degli elementi sul bucket, ci prova N volte
         to_stdout('== Sync %s To %s ==' % (path, s3path))
         sync_ok = True
 
@@ -236,6 +236,7 @@ def main():
         to_stdout('Sleep %ss\n' % (timesleep))
         time.sleep(timesleep)
 
+    to_stdout('%s End' % datetime.datetime.now())
 
 if __name__ == '__main__':
     main()
