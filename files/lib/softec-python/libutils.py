@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import calendar
 import datetime
 import os
@@ -44,6 +42,13 @@ def utc_date_to_timestamp(date_string, time_format=None):
 
     time_tuple = time.strptime(date_string, time_format)
     return calendar.timegm(time_tuple)
+
+
+def date_now(time_format=None):
+    if time_format is not None:
+        return datetime.datetime.now().strftime(time_format)
+
+    return ('%s' % datetime.datetime.now())
 
 
 def file_copy(sources, dst, suffix=None, overwrite=False):
