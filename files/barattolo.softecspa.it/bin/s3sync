@@ -123,7 +123,7 @@ def main():
     except OSError as e:
         sys.exit(e)
 
-    to_stdout('= %s %s Start = ' % (date_now(), script_name))
+    to_stdout('= %s %s Start =\n' % (date_now(), script_name))
 
     # variabili dalle sezioni, iterazione e nsca
     sections = parser.get_sections(pattern=pattern)
@@ -144,7 +144,7 @@ def main():
          nsca_svc_desc) = (d['nsca_svc_host'],
                            d['nsca_svc_desc'])
 
-        to_stdout('= %s - %s =\n' % (date_now(), desc))
+        to_stdout('= %s - %s =' % (date_now(), desc))
 
         # costruzione del bucket_name per s3cmd
         s3bucket = 's3://%s' % (bucket)
@@ -220,7 +220,7 @@ def main():
                         to_stdout(out)
                     if verbose is True:
                         to_stdout(
-                            'dryrun=%, try=%s, returncode=%s, sync_ok=%s\n' %
+                            'dryrun=%s, try=%s, returncode=%s, sync_ok=%s\n' %
                             (dryrun, count, retcode, sync_ok))
 
                     break
