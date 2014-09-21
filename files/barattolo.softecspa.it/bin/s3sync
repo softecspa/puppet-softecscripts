@@ -190,6 +190,7 @@ def main():
 
         # sync degli elementi sul bucket, ci prova N volte
         to_stdout('== Sync %s To %s ==' % (path, s3path))
+        fmt_ = 'dryrun=%s, try=%s, returncode=%s, sync_ok=%s\n'
         sync_ok = True
 
         for item in items:
@@ -219,9 +220,7 @@ def main():
                     if out:
                         to_stdout(out)
                     if verbose is True:
-                        to_stdout(
-                            'dryrun=%s, try=%s, returncode=%s, sync_ok=%s\n' %
-                            (dryrun, count, retcode, sync_ok))
+                        to_stdout(fmt_ % (dryrun, count, retcode, sync_ok))
 
                     break
 
