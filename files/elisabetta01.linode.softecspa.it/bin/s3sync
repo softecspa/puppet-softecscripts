@@ -1,11 +1,12 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 """Copia gli archivi di AutoMysqlBackup su S3.
 
 Uso:
     s3sync.py -c pys3sync.conf
     s3sync.py -c pys3sync.conf -n
-    s3sync.py -c pys3sync.conf --pattern='^backup_Cluster(Asp|Dev)$'
+    s3sync.py -c pys3sync.conf -p '^backup_Cluster(Asp|Dev)$'
 """
 
 import os
@@ -26,11 +27,11 @@ try:
     import sys
     import datetime
     import libsendnsca as sendnsca
-    from libutils import human_time, str_join, to_stderr, to_stdout
+    from libutils import date_now, human_time, to_stderr, to_stdout
 except ImportError as e:
     raise sys.exit('Import Error: %s' % e)
 
-# import glob
+import glob
 import time
 
 __version__ = '0.1'
@@ -41,65 +42,72 @@ def parse_argv():
     desc = 'Python sync MySQL backup to S3'
     parsearg = argparse.ArgumentParser(description=desc)
 
-    parsearg.add_argument(
-        '-c', '--config', action='store', dest='config',
-        help='config file, default /usr/local/etc/pys3sync.conf',
-        type=str, default='/usr/local/etc/s3sync.conf')
+    parsearg.add_argument('-c', '--config', action='store', dest='config',
+                          help='config file, default '
+                          '/usr/local/etc/pys3sync.conf',
+                          type=str, default='/usr/local/etc/s3sync.conf')
 
-    parsearg.add_argument(
-        '-p', '--pattern', action='store', dest='pattern',
-        help="regexp for [section], default \'^backup_.+\'",
-        type=str, default='^backup_.+')
+    parsearg.add_argument('-p', '--pattern', action='store', dest='pattern',
+                          help="regexp for [section], default \'^backup_.+\'",
+                          type=str, default='^backup_.+')
 
-    parsearg.add_argument(
-        '-n', '--dry-run', action='store_true', dest='dryrun',
-        help='dryrun mode')
+    parsearg.add_argument('-n', '--dry-run', action='store_true',
+                          dest='dryrun', help='dryrun mode')
 
-    parsearg.add_argument(
-        '-v', '--verbose', action='store_true', dest='verbose',
-        help='verbose')
+    parsearg.add_argument('-v', '--verbose', action='store_true',
+                          dest='verbose', help='verbose')
 
-    parsearg.add_argument(
-        '-s', '--sleep', action='store', dest='timesleep',
-        help='sleep between iterations, default 10s', type=int, default=10)
+    parsearg.add_argument('-s', '--sleep', action='store', dest='timesleep',
+                          help='sleep between iterations, default 10s',
+                          type=int, default=10)
 
-    parsearg.add_argument(
-        '-t', '--sync-times', action='store', dest='sync_times',
-        help='try syncing multiple times, default 3', type=int, default=3)
+    parsearg.add_argument('-t', '--sync-times', action='store',
+                          dest='sync_times', help='try syncing multiple '
+                          'times default 3', type=int, default=3)
 
-    parsearg.add_argument(
-        '-V', '--version', action='version',
-        version='%(prog)s ' + __version__)
+    parsearg.add_argument('-F', '--follow-symlinks', action='store_true',
+                          dest='follow_symlinks', help='follow symlinks, '
+                          'default False')
+
+    parsearg.add_argument('-V', '--version', action='version',
+                          version='%(prog)s ' + __version__)
 
     return parsearg.parse_args()
 
 
 def main():
+    script_name = os.path.basename(__file__)
+
     args = parse_argv()
     (config,
      pattern,
      dryrun,
      timesleep,
      verbose,
+     follow_symlinks,
      sync_times) = (args.config,
                     args.pattern,
                     args.dryrun,
                     args.timesleep,
                     args.verbose,
+                    args.follow_symlinks,
                     args.sync_times)
 
     if sync_times < 0 and sync_times > 3:
         sys.exit('--try-sync-times must be between 0 and 3')
+
+    sync_times = (sync_times + 1)
 
     try:
         parser = configparser.Parser(config)
     except (configparser.ParserError) as e:
         sys.exit('%s' % e)
 
-    s3cmd = 's3cmd -v' if verbose is True else 's3cmd'
-    s3cmd = ('%s -n' % (s3cmd)) if dryrun is True else s3cmd
-    s3cmd_opts = ('sync --no-progress -H')
-    s3cmd = ('%s %s' % (s3cmd, s3cmd_opts))
+    s3cmd = ('s3cmd sync multipart --multipart-chunk-size-mb=5120 '
+             '--no-progress -H')
+    s3cmd = ('%s -v' % s3cmd) if verbose is True else s3cmd
+    s3cmd = ('%s -n' % s3cmd) if dryrun is True else s3cmd
+    s3cmd = ('%s -F' % s3cmd) if follow_symlinks is True else s3cmd
 
     # boto
     s3 = boto.connect_s3()
@@ -115,10 +123,11 @@ def main():
     except OSError as e:
         sys.exit(e)
 
-    # sezioni
-    sections = parser.get_sections(pattern=pattern)
+    to_stdout('= %s %s Start =\n' % (date_now(), script_name))
 
     # variabili dalle sezioni, iterazione e nsca
+    sections = parser.get_sections(pattern=pattern)
+
     for section in sections:
         d = parser.get_dict(section)
         (desc,
@@ -135,8 +144,7 @@ def main():
          nsca_svc_desc) = (d['nsca_svc_host'],
                            d['nsca_svc_desc'])
 
-        # inizio
-        to_stdout('= %s - %s starting =' % (desc, time.ctime(time.time())))
+        to_stdout('= %s - %s =' % (date_now(), desc))
 
         # costruzione del bucket_name per s3cmd
         s3bucket = 's3://%s' % (bucket)
@@ -156,6 +164,7 @@ def main():
 
         # desfinizione del bucket di destinazione
         today = datetime.datetime.today().strftime('%Y/%m/%d')
+
         if folder:
             s3path = ('%s/%s/%s/' % (s3bucket, folder, today))
         else:
@@ -172,52 +181,63 @@ def main():
             nsca.service_result(nsca_svc_host, nsca_svc_desc, 2, msg)
             continue
 
-        # processiamo i singoli elementi, in questo modo siamo abbiamo piu'
-        #  velocita' su directory con un numero elevato di elementi
-        # items = glob.glob('%s/%s' % (path, '*'))
+        # processiamo i singoli elementi, in questo modo abbiamo piu'
+        #  velocita' su directory con numero elevato di elementi
+        items = glob.glob('%s/%s' % (path, '*'))
 
-        to_stdout('== S3 bucket "%s" ==' % bucket)
+        to_stdout('== bucket %s ==' % bucket)
         start_time = time.time()
 
-        # sync degli elementi sul bucket su S3, ci prova N volte
-        to_stdout('== Sync %s to %s ==' % (path, s3path))
-        sync_ok = False
+        # sync degli elementi sul bucket, ci prova N volte
+        to_stdout('== Sync %s To %s ==' % (path, s3path))
+        fmt_ = 'dryrun=%s, try=%s, returncode=%s, sync_ok=%s\n'
+        sync_ok = True
 
-        for count in range(0, sync_times):
-            if verbose is True:
-                to_stdout(str_join(s3cmd, path, s3path))
+        for item in items:
+            for count in range(1, sync_times):
+                cmd = ('%s %s %s' % (s3cmd, item, s3path)).encode('utf-8')
 
-            s_out, s_err = sh.run(str_join(s3cmd, path, s3path))[:2]
-            if s_err:
-                to_stderr('Sync (try=%s) %s to %s: %s' % (count,
-                                                          path,
-                                                          s3path,
-                                                          s_err))
-                if s_out:
-                    to_stdout(s_out)
+                if verbose is True:
+                    to_stdout('exec: %s' % cmd)
 
-                time.sleep(5)
-                continue
-            else:
-                if s_out or not s_err:
-                    to_stdout(s_out)
-                    sync_ok = True
-                break
+                out, err, retcode = sh.run(cmd)[:3]
 
-        date_now = ('%s' % datetime.datetime.now())
-        if sync_ok is not True:
-            msg_err = ('%s: errors' % date_now)
-            nsca.service_result(nsca_svc_host, nsca_svc_desc, 2, msg_err)
+                if retcode != 0:
+                    to_stderr('dryrun=%s' % dryrun)
+                    to_stderr('try=%s' % count)
+                    to_stderr('returncode=%s' % retcode)
+                    to_stderr('stderr=%s' % err)
+                    to_stderr('stdout=%s' % out)
 
-        if sync_ok is True:
-            msg_ok = ('%s: successfully' % date_now)
-            nsca.service_result(nsca_svc_host, nsca_svc_desc, 0, msg_ok)
+                    if count == (sync_times - 1):
+                        sync_ok = False
+                        to_stderr('sync_ok=%s\n' % sync_ok)
+
+                    time.sleep(5)
+                    continue
+
+                if retcode == 0:
+                    if out:
+                        to_stdout(out)
+                    if verbose is True:
+                        to_stdout(fmt_ % (dryrun, count, retcode, sync_ok))
+
+                    break
+
+        if sync_ok is not True and dryrun is False:
+            msg = ('%s: errors' % date_now())
+            nsca.service_result(nsca_svc_host, nsca_svc_desc, 2, msg)
+
+        if sync_ok is True and dryrun is False:
+            msg = ('%s: successfully' % date_now())
+            nsca.service_result(nsca_svc_host, nsca_svc_desc, 0, msg)
 
         end_time = time.time()
         to_stdout('Completed in %s' % human_time((end_time - start_time)))
         to_stdout('Sleep %ss\n' % (timesleep))
         time.sleep(timesleep)
 
+    to_stdout('= %s %s End = ' % (date_now(), script_name))
 
 if __name__ == '__main__':
     main()
