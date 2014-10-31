@@ -9,6 +9,12 @@ if (!isset($argv) or !is_array($argv) or !isset($argv[1]))
 
 $path=$argv[1];
 
+# machine-readable optional flag
+$mr = FALSE;
+if (isset($argv[2]) && ($argv[2] === '--machine-readable')) {
+  $mr = TRUE;
+}
+
 if (!is_dir($path)) die("Path needed\n\n");
 
 function format_bytes($size)
@@ -58,6 +64,9 @@ catch (UnexpectedValueException $e)
 {
         printf("Directory [%s] contained a directory we can not recurse into", $directory);
 }
-
-echo "Total: $nbfiles items, ".format_bytes($bytestotal)."\n";
+if ($mr) {
+  echo "$nbfiles,$bytestotal\n";
+} else {
+  echo "Total: $nbfiles items, ".format_bytes($bytestotal)."\n";
+}
 ?>
