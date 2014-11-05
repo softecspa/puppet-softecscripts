@@ -200,7 +200,11 @@ def main():
                 if verbose is True:
                     to_stdout('exec: %s' % cmd)
 
-                out, err, retcode = sh.run(cmd)[:3]
+                try:
+                    out, err, retcode = sh.run(cmd, timeout=18000)[:3]
+                except sh.TimeoutError as e:
+                    retcode = 1
+                    err = e
 
                 if retcode != 0:
                     to_stderr('dryrun=%s' % dryrun)
