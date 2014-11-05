@@ -63,7 +63,7 @@ sub send_mail{
         $msg->send('smtp','localhost');
 };
 
-print $dest "ora_inizo;durata;numero_chiamante;numero_chiamato\n";
+print $dest "ora_inizo;durata;numero_chiamante;numero_chiamato;note\n";
 
 my $csv = Text::CSV->new({sep_char => ';', binary => 1 }) or die "Cannot use CSV: ".Text::CSV->error_diag ();
 $csv->eol("\n");
