@@ -1,0 +1,18 @@
+#!/bin/bash
+ROOT_DIR=/var/lib/tomcat7/apache-solr-1.4.1/drupal/solr
+SRC_DIR=$ROOT_DIR/DA_COPIARE_PER_NUOVO_INDICE
+
+if [ "x$1" == "x" ]; then
+    echo "Usage: `basename $0` <indexname>"
+    exit 1
+fi
+
+if [ -e $ROOT_DIR/$1 ]; then
+    echo "Error: index $ROOT_DIR/$1 already exists"
+    exit 1
+fi
+
+cp -a $SRC_DIR $ROOT_DIR/$1
+
+echo "new index directory created. Remember to edit $ROOT_DIR/solr.xml"
+exit 0
