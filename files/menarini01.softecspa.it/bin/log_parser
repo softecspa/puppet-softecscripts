@@ -201,7 +201,7 @@ def ftp_send(_file, ftp_opts):
         finally:
             fh.close()
             ftpsess.quit()
-            os.chdir(cwd)
+            # os.chdir(cwd)
     except:
         print >>sys.stderr, (sys.exc_info()[0])
         print >>sys.stderr, (sys.exc_info()[1])
