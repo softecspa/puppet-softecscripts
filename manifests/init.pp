@@ -10,7 +10,7 @@ class softecscripts (
   $logrotate_create_mode  = '0664'
 ){
 
-  include php5::cli
+  include softec_php::cli
   include softecscripts::logrotate
 
   File {
@@ -75,12 +75,12 @@ class softecscripts (
 
   file { '/usr/local/bin/smartfind':
     source  => 'puppet:///modules/softecscripts/bin/smartfind',
-    require => Class['php5::cli'],
+    require => Class['softec_php::cli'],
   }
 
   file { '/usr/local/bin/smartdu':
     source  => 'puppet:///modules/softecscripts/bin/smartdu',
-    require => Class['php5::cli'],
+    require => Class['softec_php::cli'],
   }
 
   file { '/usr/local/bin/remote-updater':
