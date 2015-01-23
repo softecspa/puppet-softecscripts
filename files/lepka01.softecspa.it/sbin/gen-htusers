@@ -1,0 +1,44 @@
+#!/bin/bash
+
+# Lorenzo Cocchi workaround temporaneo per join htaccess del SIA
+# e quello degli utenti esterni in modo da segare LDAP su SVN
+
+umask 0077
+LANG=C
+IFS=$' \t\n'
+
+SIA_HTUSERS="/var/www/web31/sia/data/htusers"
+EXT_HTUSERS="/var/www/web31/web/ws/tracusers.list"
+TMP_EXT_HTUSERS="/tmp/ext_htusers"
+TMP_HTUSERS="/tmp/htusers"
+
+die() {
+    local MSG="$1"
+    local E=${2-1}
+    echo "${MSG}" >&2
+    exit ${E}
+}
+
+EXT_USERS="$(sed -n '/BeginExt/,/EndExt/p' ${EXT_HTUSERS} | egrep -v '#')"
+
+if [ $# -ne 0 ] || [ -z "${EXT_USERS}" ]; then
+    die "can not select external users"
+fi
+
+echo "${EXT_USERS}" >${TMP_EXT_HTUSERS}
+cat ${SIA_HTUSERS} ${TMP_EXT_HTUSERS} >${TMP_HTUSERS}
+
+chmod 0440 ${TMP_HTUSERS}
+chown www-data:root ${TMP_HTUSERS}
+
+rsync -aq -e \
+    "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+    ${TMP_HTUSERS} cluster.tools.softecspa.it:/var/www/.htusers
+
+if [ $# -ne 0 ]; then
+    die "can not rsync ${TMP_HTUSERS}"
+fi
+
+rm ${TMP_EXT_HTUSERS} ${TMP_HTUSERS}
+
+# EOF
