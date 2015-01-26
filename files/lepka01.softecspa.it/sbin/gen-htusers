@@ -12,6 +12,12 @@ EXT_HTUSERS="/var/www/web31/web/ws/tracusers.list"
 TMP_EXT_HTUSERS="/tmp/ext_htusers"
 TMP_HTUSERS="/tmp/htusers"
 
+REMOTE_HOSTS="
+cluster.tools.softecspa.it
+ext-antibrote-nagios.cluster-antibrote.softecspa.it
+"
+
+
 die() {
     local MSG="$1"
     local E=${2-1}
@@ -31,9 +37,11 @@ cat ${SIA_HTUSERS} ${TMP_EXT_HTUSERS} >${TMP_HTUSERS}
 chmod 0440 ${TMP_HTUSERS}
 chown www-data:root ${TMP_HTUSERS}
 
-rsync -aq -e \
-    "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
-    ${TMP_HTUSERS} cluster.tools.softecspa.it:/var/www/.htusers
+for RHOST in ${REMOTE_HOSTS}; do
+    rsync -aq --min-size=1 -e \
+        "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20" \
+        ${TMP_HTUSERS} ${RHOST}:/var/www/.htusers
+done
 
 if [ $# -ne 0 ]; then
     die "can not rsync ${TMP_HTUSERS}"
