@@ -12,9 +12,7 @@ class softecscripts (
 
   # 06/02/2015 l.cocchi: proviamo a togliere il pinning dal PHP 
   #  era `include softec_php::cli`
-  apt::ppa { 'ondrej/php5':
-    key => 'E5267A6C',
-  }
+  apt::ppa { 'ppa:ondrej/php5-oldstable': }
   include php::cli
   include softecscripts::logrotate
 
@@ -25,8 +23,8 @@ class softecscripts (
   }
 
   file { '/usr/local/lib/bash':
-    ensure      => directory,
-    mode        => 02775,
+    ensure => directory,
+    mode   => 02775,
   }
 
   file { '/usr/local/lib/softec-python':
@@ -75,7 +73,7 @@ class softecscripts (
   }
 
   softec_sudo::conf {'softecscripts':
-    source  => 'puppet:///modules/softecscripts/etc/sudo'
+    source => 'puppet:///modules/softecscripts/etc/sudo'
   }
 
   file { '/usr/local/bin/smartfind':
