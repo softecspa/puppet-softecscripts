@@ -77,12 +77,12 @@ class softecscripts (
 
   file { '/usr/local/bin/smartfind':
     source  => 'puppet:///modules/softecscripts/bin/smartfind',
-    require => Class['softec_php::cli'],
+    require => Class['php::cli'],
   }
 
   file { '/usr/local/bin/smartdu':
     source  => 'puppet:///modules/softecscripts/bin/smartdu',
-    require => Class['softec_php::cli'],
+    require => Class['php::cli'],
   }
 
   file { '/usr/local/bin/remote-updater':
