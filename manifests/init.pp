@@ -10,7 +10,9 @@ class softecscripts (
   $logrotate_create_mode  = '0664'
 ){
 
-  include softec_php::cli
+  # 06/02/2015 l.cocchi: proviamo a togliere il pinning dal PHP 
+  #  era `include softec_php::cli`
+  include php::cli
   include softecscripts::logrotate
 
   File {
