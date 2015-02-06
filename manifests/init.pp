@@ -12,6 +12,9 @@ class softecscripts (
 
   # 06/02/2015 l.cocchi: proviamo a togliere il pinning dal PHP 
   #  era `include softec_php::cli`
+  apt::ppa { 'ondrej/php5':
+    key => 'E5267A6C',
+  }
   include php::cli
   include softecscripts::logrotate
 
