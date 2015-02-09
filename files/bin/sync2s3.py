@@ -1,0 +1,197 @@
+#!/usr/bin/env python -u
+
+import argparse
+import os
+import re
+import sys
+import time
+
+sys_libpath = '/usr/local/lib/softec-python'
+local_libpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lib')
+
+try:
+    sys.path.insert(0, os.path.realpath(os.environ['MYLIBDIR']))
+except KeyError:
+    sys.path.insert(0, sys_libpath)
+    sys.path.insert(0, local_libpath)
+
+import libsh as sh
+from libutils import timestamp_to_localtime, to_stderr, to_stdout
+
+__version__ = '0.1 alpha'
+__author__ = 'Lorenzo Cocchi <lorenzo.cocchi@softecspa.it>'
+
+
+def parse_argv():
+    parsearg = argparse.ArgumentParser()
+
+    parsearg.add_argument('-P', '--path', action='store', dest='path',
+                          help='local PATH', type=str, required=True)
+
+    parsearg.add_argument('-d', '--day', action='store', dest='day',
+                          help='match item with mtime are older than day',
+                          type=int, required=True)
+
+    parsearg.add_argument('-D', '--delete', action='store_true', dest='delete',
+                          help='delete files if the copy was successful to '
+                               'S3')
+
+    parsearg.add_argument('-v', '--verbose', action='count', dest='verbose',
+                          help='more verbosity, up to two levels', default=0)
+
+    parsearg.add_argument('-n', '--dryrun', action='store_true',
+                          dest='dryrun', help='dryrun mode')
+
+    parsearg.add_argument('-s', '--sleep', action='store', dest='sleep',
+                          help='sleep between iterations, default 0.001s',
+                          type=float, default=0.001)
+
+    parsearg.add_argument('-r', '--s3bucket', action='store', dest='s3bucket',
+                          help='s3bucket', required=True)
+
+    parsearg.add_argument('-t', '--sync-times', action='store',
+                          dest='try_times', help='try syncing multiple '
+                          'times, default 2', type=int, default=2)
+
+    parsearg.add_argument('-F', '--follow-symlinks', action='store_true',
+                          dest='follow_symlinks', help='follow symlinks, '
+                          'default False')
+
+    parsearg.add_argument('--multipart', action='store_true',
+                          dest='multipart', help='multipart, default False')
+
+    parsearg.add_argument('--multipart-chunk-size-mb', action='store',
+                          dest='multipart_chunk_size_mb',
+                          help='multipart chunk size in mb', type=int)
+
+    parsearg.add_argument('--sync-timeout', action='store',
+                          dest='timeout', help='timeout, default 3600s',
+                          default=3600, type=int)
+
+    parsearg.add_argument('-V', '--version', action='version',
+                          version='%(prog)s ' + __version__)
+
+    args = parsearg.parse_args()
+
+    if args.multipart and args.multipart_chunk_size_mb is None:
+        parsearg.error('--multipart require --multipart-chunk-size-mb')
+
+    if args.multipart is False and args.multipart_chunk_size_mb is not None:
+        parsearg.error('--multipart require --multipart-chunk-size-mb')
+
+    return args
+
+
+def walk(path):
+    for dirpath, dirnames, filenames in os.walk(path):
+        for filename in filenames:
+            item = os.path.join(dirpath, filename)
+            yield item
+
+
+if __name__ == '__main__':
+    args = parse_argv()
+
+    (path,
+     day,
+     delete,
+     verbose,
+     dryrun,
+     sleep,
+     try_times,
+     timeout,
+     s3bucket,
+     follow_symlinks,
+     multipart,
+     multipart_chunk_size_mb,) = (args.path,
+                                  args.day,
+                                  args.delete,
+                                  args.verbose,
+                                  args.dryrun,
+                                  args.sleep,
+                                  args.try_times,
+                                  args.timeout,
+                                  args.s3bucket,
+                                  args.follow_symlinks,
+                                  args.multipart,
+                                  args.multipart_chunk_size_mb)
+
+    out_ = 'dryrun=%s, try=%s, retcode=%s, sync=%s'
+    err_ = out_ + ' stderr=%s stdout=%s'
+
+    if multipart is not True:
+        s3cmd = ('s3cmd sync --no-progress -H')
+    else:
+        s3cmd = ('s3cmd sync multipart --multipart-chunk-size-mb=%s '
+                 '--no-progress -H' % multipart_chunk_size_mb)
+
+    s3cmd = ('%s -v' % s3cmd) if verbose >= 1 else s3cmd
+    s3cmd = ('%s -n' % s3cmd) if dryrun is True else s3cmd
+    s3cmd = ('%s -F' % s3cmd) if follow_symlinks is True else s3cmd
+
+    old_than = time.time() - (day * 86400)
+    s3bucket = re.sub('/$', '', s3bucket)
+
+    if dryrun is not False:
+        make_bucket = ('s3cmd mb %s' % s3bucket)
+        out, err, retcode = sh.run(make_bucket, timeout=10)[:3]
+        if retcode != 0:
+            raise SystemExit('%s: %s' % (make_bucket, err))
+
+    for item in walk(path):
+        try:
+            obj = os.stat(item)
+        except OSError as e:
+            to_stderr('%s' % (e.strerror))
+            continue
+
+        if obj.st_mtime < old_than:
+            if verbose >= 1:
+                date = timestamp_to_localtime(obj.st_mtime, '%F')
+                to_stdout('Item (%s) \'%s\'' % (date, item))
+
+            sync = True
+            clean_item = re.sub('^\.?/', '', item)
+            s3path = ('%s/%s' % (s3bucket, clean_item))
+
+            for count in range(try_times):
+                cmd = ('%s %s %s' % (s3cmd, item, s3path)).encode('utf-8')
+
+                if verbose >= 1:
+                    to_stdout('Exec %s' % cmd)
+
+                try:
+                    out, err, retcode = sh.run(cmd, timeout=timeout)[:3]
+                except sh.TimeoutError as e:
+                    retcode, err = (1, e)
+
+                if retcode != 0:
+                    to_stderr(err_ % (dryrun, count, retcode, sync, err, out))
+
+                    if count == (try_times - 1):
+                        sync = False
+                        to_stderr('sync=%s, break\n' % sync)
+                        break
+
+                    time.sleep(1)
+                    continue
+
+                if retcode == 0:
+                    if out:
+                        to_stdout(out)
+                    if verbose >= 2:
+                        to_stdout(out_ % (dryrun, count, retcode, sync))
+
+                    break
+
+            if delete is True and dryrun is False and sync is True:
+                try:
+                    os.unlink(item)
+                except OSError as e:
+                    to_stderr(
+                        'Can\'t remove \'%s\': %s' % (item, e.strerror))
+                    continue
+
+                to_stdout('Remove \'%s\'' % item)
+
+            time.sleep(sleep)
