@@ -116,6 +116,7 @@ if __name__ == '__main__':
                                   args.multipart,
                                   args.multipart_chunk_size_mb)
 
+    script_name = os.path.splitext(os.path.basename(__file__))[0]
     out_ = 'dryrun=%s, try=%s, retcode=%s, sync=%s'
     err_ = out_ + ' stderr=%s stdout=%s'
 
@@ -137,6 +138,9 @@ if __name__ == '__main__':
         out, err, retcode = sh.run(make_bucket, timeout=10)[:3]
         if retcode != 0:
             raise SystemExit('%s: %s' % (make_bucket, err))
+
+    if verbose >= 1:
+        to_stdout('%s Start at %s' % (script_name, time.strftime('%F %T')))
 
     for item in walk(path):
         try:
@@ -195,3 +199,6 @@ if __name__ == '__main__':
                 to_stdout('Remove \'%s\'' % item)
 
             time.sleep(sleep)
+
+    if verbose >= 1:
+        to_stdout('%s End at %s' % (script_name, time.strftime('%F %T')))
