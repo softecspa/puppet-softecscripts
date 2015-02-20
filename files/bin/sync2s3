@@ -1,4 +1,5 @@
 #!/usr/bin/env python -u
+# -*- coding: utf-8 -*-
 
 import argparse
 import os
@@ -7,16 +8,15 @@ import sys
 import time
 
 sys_libpath = '/usr/local/lib/softec-python'
-local_libpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lib')
 
 try:
     sys.path.insert(0, os.path.realpath(os.environ['MYLIBDIR']))
 except KeyError:
     sys.path.insert(0, sys_libpath)
-    sys.path.insert(0, local_libpath)
 
 import libsh as sh
-from libutils import timestamp_to_localtime, to_stderr, to_stdout
+import liblogging
+from libutils import timestamp_to_localtime
 
 __version__ = '0.1 alpha'
 __author__ = 'Lorenzo Cocchi <lorenzo.cocchi@softecspa.it>'
@@ -116,7 +116,10 @@ if __name__ == '__main__':
                                   args.multipart,
                                   args.multipart_chunk_size_mb)
 
-    script_name = os.path.splitext(os.path.basename(__file__))[0]
+    to_stderr = liblogging.setup_logging(name='%s.%s' % (__name__, 'stderr'),
+                                         log_level='ERROR')
+    to_stdout = liblogging.setup_logging(name='%s.%s' % (__name__, 'stdout'),
+                                         log_level='DEBUG', filename='-')
     out_ = 'dryrun=%s, try=%s, retcode=%s, sync=%s'
     err_ = out_ + ' stderr=%s stdout=%s'
 
@@ -137,22 +140,23 @@ if __name__ == '__main__':
         make_bucket = ('s3cmd mb %s' % s3bucket)
         out, err, retcode = sh.run(make_bucket, timeout=10)[:3]
         if retcode != 0:
-            raise SystemExit('%s: %s' % (make_bucket, err))
+            to_stderr.error('%s: %s' % (make_bucket, err))
+            raise SystemExit(1)
 
     if verbose >= 1:
-        to_stdout('%s Start at %s' % (script_name, time.strftime('%F %T')))
+        to_stdout.info('start')
 
     for item in walk(path):
         try:
             obj = os.stat(item)
         except OSError as e:
-            to_stderr('%s' % (e.strerror))
+            to_stderr.exception('%s' % (e.strerror))
             continue
 
         if obj.st_mtime < old_than:
             if verbose >= 1:
                 date = timestamp_to_localtime(obj.st_mtime, '%F')
-                to_stdout('Item (%s) \'%s\'' % (date, item))
+                to_stdout.info('Item (%s) \'%s\'' % (date, item))
 
             sync = True
             clean_item = re.sub('^\.?/', '', item)
@@ -162,7 +166,7 @@ if __name__ == '__main__':
                 cmd = ('%s %s %s' % (s3cmd, item, s3path)).encode('utf-8')
 
                 if verbose >= 1:
-                    to_stdout('Exec %s' % cmd)
+                    to_stdout.info('Exec %s' % cmd)
 
                 try:
                     out, err, retcode = sh.run(cmd, timeout=timeout)[:3]
@@ -170,11 +174,12 @@ if __name__ == '__main__':
                     retcode, err = (1, e)
 
                 if retcode != 0:
-                    to_stderr(err_ % (dryrun, count, retcode, sync, err, out))
+                    to_stderr.error(
+                        err_ % (dryrun, count, retcode, sync, err, out))
 
                     if count == (try_times - 1):
                         sync = False
-                        to_stderr('sync=%s, break\n' % sync)
+                        to_stderr.error('sync=%s, break\n' % sync)
                         break
 
                     time.sleep(1)
@@ -182,9 +187,9 @@ if __name__ == '__main__':
 
                 if retcode == 0:
                     if out:
-                        to_stdout(out)
+                        to_stdout.info(out)
                     if verbose >= 2:
-                        to_stdout(out_ % (dryrun, count, retcode, sync))
+                        to_stdout.debug(out_ % (dryrun, count, retcode, sync))
 
                     break
 
@@ -192,13 +197,13 @@ if __name__ == '__main__':
                 try:
                     os.unlink(item)
                 except OSError as e:
-                    to_stderr(
+                    to_stderr.error(
                         'Can\'t remove \'%s\': %s' % (item, e.strerror))
                     continue
 
-                to_stdout('Remove \'%s\'' % item)
+                to_stdout.info('Remove \'%s\'' % item)
 
             time.sleep(sleep)
 
     if verbose >= 1:
-        to_stdout('%s End at %s' % (script_name, time.strftime('%F %T')))
+        to_stdout.info('End')
