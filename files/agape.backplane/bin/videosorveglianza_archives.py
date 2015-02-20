@@ -68,6 +68,7 @@ def main():
     log_fmt = '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
 
     log = liblogging.setup_logging(name=scriptname,
+                                   filename='-',
                                    log_level=log_level,
                                    fmt=log_fmt)
 
