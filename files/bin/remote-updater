@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# inclusione libreria
-. $(dirname $(realpath $0))/../lib/bash/softec-common.sh || exit
+# softec library
+. $(dirname $(realpath $0))/../lib/bash/softec-common.sh || exit 1
 
 # Required params
 REMOTE_URL=$1
@@ -26,7 +26,7 @@ if [ -z $REMOTE_URL ]; then
 fi
 
 if [ -z $DEST_FILE ]; then
-    log_error "Missing parameter REMOTE_URL"
+    log_error "Missing parameter DEST_FILE"
     exit 2
 fi
 
@@ -35,13 +35,25 @@ if [ ! -d $(/usr/bin/dirname "$DEST_FILE") ]; then
     exit 2
 fi
 
-log_debug "Starting download of $REMOTE_URL -> $TEMP_FILE"
-/usr/bin/wget -q -O $TEMP_FILE $REMOTE_URL
+log_debug "Starting download of $REMOTE_URL to $TEMP_FILE"
+/usr/bin/wget --tries=1 --connect-timeout=10 -q -O $TEMP_FILE $REMOTE_URL
+
+RETVAL=$?
+
+if [ $RETVAL -ne 0 ]; then
+    log_error "wget: exited with code $RETVAL"
+    exit 2
+fi
+
+if [ ! -s $TEMP_FILE ]; then
+    log_error "$TEMP_FILE: has zero size"
+    exit 2
+fi
 
 if ! diff -q $TEMP_FILE $DEST_FILE; then
     log "Updating $DEST_FILE with $TEMP_FILE..."
     cp -b $TEMP_FILE "$DEST_FILE"
-    
+
     if [ -n "$PERMS" ]; then
         /bin/chmod $PERMS "$DEST_FILE"
         log_debug "Set perms on $DEST_FILE"
@@ -62,10 +74,11 @@ if ! diff -q $TEMP_FILE $DEST_FILE; then
         $ACTION
     fi
 else
-    log_debug "Nothing todo files are identical"
+    log_debug "Nothing todo, files are identical"
 fi
 
 [ -f $TEMP_FILE ] && rm -f $TEMP_FILE
 
 log_debug "End of execution"
 
+# EOF
