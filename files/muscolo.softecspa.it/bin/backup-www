@@ -10,11 +10,8 @@ SOURCEPATH="/mnt"
 LOCKFILE="/var/lock/backup-www.lock"
 trap "rm -f ${LOCKFILE}" SIGINT SIGQUIT SIGTERM
 
-# 28/03/2011 16:56 lcocchi: punto il backup sulla share di sequoia04
-# 20/04/2011 17:41 lcocchi: ripunto il backup sul disco USB
 MOUNTPOINT="/mnt/disco-usb-backup-www"
 DESTPATH="$MOUNTPOINT/backup/clusterasp"
-#DESTPATH="/mnt/backup_su_sequoia04"
 
 DESTDIR="${DESTPATH}/${TODAY}"
 
@@ -28,10 +25,9 @@ IONICE="/usr/bin/ionice"
 $RENICE 19 -p $$ >/dev/null
 $IONICE -c3 -p $$
 
-#backup retention
+# backup retention
 xDAYS="21"
 
-##07/12/2011 - Fx - Ticket 630 - aggiungo l'invio del check nagios
 NAGIOS_SERVER='tiglio.softecspa.it'
 NSCA='/usr/sbin/send_nsca'
 
@@ -43,13 +39,10 @@ mer=4
 gio=5
 ven=6
 
-# 16/05/2011 - Fx - Aggiungo un file di lock per evitare che si accavallino i backup
-# Rimuovo il lockfile se +vecchio di 1440 minuti (24h)
 find ${LOCKFILE%/*} -name ${LOCKFILE##*/} -cmin +1440 -exec rm -f '{}' \;
 if [ -e $LOCKFILE ]
 then
     echo "ERROR: already runnig..." >&2;
-    #Invia un critical a nagios
     echo -e "muscolo\tbackup_disco_usb_www_clusterasp\t2\tAlready running" | $NSCA -H $NAGIOS_SERVER
     exit 1
 else
@@ -75,31 +68,31 @@ DAY_OF_WEEK="$(date +%a)"
 case ${DAY_OF_WEEK} in
     dom)
         MTIME="--mtime=${dom}"
-    LABEL="mtime${dom}"
+        LABEL="mtime${dom}"
     ;;
     lun)
         MTIME="--mtime=${lun}"
-    LABEL="mtime${lun}"
+        LABEL="mtime${lun}"
     ;;
     mar)
         MTIME="--mtime=${mar}"
-    LABEL="mtime${mar}"
+        LABEL="mtime${mar}"
     ;;
     mer)
         MTIME="--mtime=${mer}"
-    LABEL="mtime${mer}"
+        LABEL="mtime${mer}"
     ;;
     gio)
         MTIME="--mtime=${gio}"
-    LABEL="mtime${gio}"
+        LABEL="mtime${gio}"
     ;;
     ven)
         MTIME="--mtime=${ven}"
-    LABEL="mtime${ven}"
+        LABEL="mtime${ven}"
     ;;
     sab)
         MTIME=""
-    LABEL="full"
+        LABEL="full"
     ;;
     *)
         echo "ERROR: Can't match day of week" >&2; rm $LOCKFILE; echo -e "muscolo\tbackup_disco_usb_www_clusterasp\t2\tCan't match day of week" | $NSCA -H $NAGIOS_SERVER >/dev/null; rm $LOCKFILE; exit 1 ;;
@@ -118,14 +111,6 @@ ${SMARTFIND} "${SOURCEPATH}/${SOURCEDIR}" --type=file,link ${MTIME} \
 
 # Valore di uscita dello smartfind
 RETVAL=$?
-
-# mtime del find
-# 11/12/2010 lcocchi: passo da 17 a 21
-# 05/01/2011 lcocchi: passo da 21 a 29
-# 02/02/2011 fpizzurro: passo da 29 a 36
-#09/11/2011 - Fx - Aumento la retention a 60 giorni visto che ora il disco è da 2 TB
-#16/01/2012 - Fx - Scendo la retention a 50 giorni
-#xDAYS="50"
 DELETE_LOG="${DESTDIR}/delete-backup.log"
 
 # la fase di cancellazione viene eseguita solo se lo smartfind esce con 0 (zero)
@@ -137,9 +122,6 @@ if [ "${RETVAL}" -ne "0" ]; then
     exit 1
 fi
 
-# 12/07/2011 Fx ticket 630 - invio un OK al check nagios. Da rivedere facendo
-# si che lo smartfind logghi diversamente gli errori e che possa essere
-# controllato se tutti i file sono stati copiati correttamente.
 echo -e "muscolo\tbackup_disco_usb_www_clusterasp\t0\tUltimo backup eseguito `date +%d/%m/%Y` `date +%T`" | $NSCA -H $NAGIOS_SERVER >/dev/null
 
 cd ${DESTPATH} 2>/dev/null || \
@@ -168,7 +150,6 @@ if [ "`pwd`" == "${DESTPATH}" ]; then
 fi
 
 rm $LOCKFILE
-
 exit 0
 
-# END
+# EOF
