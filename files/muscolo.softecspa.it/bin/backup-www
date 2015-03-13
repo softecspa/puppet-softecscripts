@@ -125,7 +125,7 @@ fi
 echo -e "muscolo\tbackup_disco_usb_www_clusterasp\t0\tUltimo backup eseguito `date +%d/%m/%Y` `date +%T`" | $NSCA -H $NAGIOS_SERVER >/dev/null
 
 cd ${DESTPATH} 2>/dev/null || \
-    { echo "`date` - cd ${DESTPATH}: FAILED" >> ${DELETE_LOG}; rm ${LOCKFILE}; exit 1; };
+    { echo "`date` - cd ${DESTPATH}: FAILED" >&2; rm ${LOCKFILE}; exit 1; };
 
 if [ "`pwd`" == "${DESTPATH}" ]; then
     for target in `find . -maxdepth 1 -regextype posix-egrep -regex "./[0-9]{8}-(mtime[0-9]|full)?" -type d -mtime +${xDAYS}`
