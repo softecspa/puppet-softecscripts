@@ -9,8 +9,11 @@ Uso:
     s3sync.py -c pys3sync.conf -p '^backup_Cluster(Asp|Dev)$'
 """
 
+import datetime
+import glob
 import os
 import sys
+import time
 
 libpath = '/usr/local/lib/softec-python'
 
@@ -24,15 +27,10 @@ try:
     import boto
     import libconfigparser2 as configparser
     import libsh as sh
-    import sys
-    import datetime
     import libsendnsca as sendnsca
     from libutils import date_now, human_time, to_stderr, to_stdout
 except ImportError as e:
     raise sys.exit('Import Error: %s' % e)
-
-import glob
-import time
 
 __version__ = '0.1'
 __author__ = 'Lorenzo Cocchi <lorenzo.cocchi@softecspa.it>'
@@ -231,10 +229,12 @@ def main():
         if sync_ok is not True and dryrun is False:
             msg = ('%s: errors' % date_now())
             nsca.service_result(nsca_svc_host, nsca_svc_desc, 2, msg)
+            to_stderr('send_nsca: %s' % msg)
 
         if sync_ok is True and dryrun is False:
             msg = ('%s: successfully' % date_now())
             nsca.service_result(nsca_svc_host, nsca_svc_desc, 0, msg)
+            to_stdout('send_nsca: %s' % msg)
 
         end_time = time.time()
         to_stdout('Completed in %s' % human_time((end_time - start_time)))
