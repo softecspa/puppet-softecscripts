@@ -15,6 +15,7 @@ TMP_HTUSERS="/tmp/htusers"
 REMOTE_HOSTS="
 cluster.tools.softecspa.it
 ext-antibrote-nagios.cluster-antibrote.softecspa.it
+doko.softecspa.it
 "
 
 
