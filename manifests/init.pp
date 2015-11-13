@@ -111,4 +111,14 @@ class softecscripts (
     source  => 'puppet:///modules/softecscripts/bin/meminfo.pl',
     require => Package['perl'],
   }
+
+  file { '/usr/local/sbin/purge-old-kernels':
+    source => 'puppet:///modules/softecscripts/sbin/purge-old-kernels',
+    mode   => 755,
+  }->
+  file { '/etc/cron.daily/purge-old-kernels':
+    ensure  => present,
+    target => '/usr/local/sbin/purge-old-kernels',
+  }
+
 }
