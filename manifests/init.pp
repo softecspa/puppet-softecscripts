@@ -58,6 +58,10 @@ class softecscripts (
     require => File['/usr/local/lib/bash'],
   }
 
+  file { '/usr/local/etc/slack.conf':
+    source => 'puppet:///modules/softec_private/etc/slack.conf',
+  }
+
   file { '/usr/local/bin/sample-bash-script':
     source  => 'puppet:///modules/softecscripts/bin/sample-bash-script',
     require => File['/usr/local/lib/bash/softec-common.sh'],
