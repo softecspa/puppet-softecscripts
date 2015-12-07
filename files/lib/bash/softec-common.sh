@@ -246,7 +246,19 @@ if [ ! -w ${LOGFILE} ]; then
     exit 1
 fi
 
-
+# send a message to slack if slack is configured
+function slack() {
+    ensure_bin 'curl' || exit 1
+    # SLACK_URL variable is secret, is not inside the library, it must be created on server in a different way
+    [ -f /usr/local/etc/slack.conf ] || exit 1
+    . /usr/local/etc/slack.conf
+    [ -z "$SLACK_URL" ] && exit 1
+    if [ -n "$1" ] && [ $LOGLEVEL -ge $LOGLEVEL_DEBUG ]; then
+      echo "`date "+%Y-%m-%d %T"` [$$] INFO: Updating channel #ops on https://softec.slack.com"
+      PAYLOAD="payload={\"channel\": \"#ops\", \"text\": \"*$HOSTNAME*: $1\"}"
+      /usr/bin/curl --silent -X POST --data-urlencode "$PAYLOAD" "$SLACK_URL"
+    fi
+}
 
 # default: stampa sempre su file e su std output se richiesto
 function log() {
@@ -260,6 +272,7 @@ function log() {
 function log_error() {
     if [ -n "$1" ] && [ $LOGLEVEL -ge $LOGLEVEL_ERROR ]; then
         echo -e "`date "+%Y-%m-%d %T"` [$$] ERR: $1" 1>&2
+        slack $1
     fi
     echo -e "`date "+%Y-%m-%d %T"` [$$] ERR: $1" >> $LOGFILE
 }
