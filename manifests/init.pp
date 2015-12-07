@@ -1,3 +1,8 @@
+# Pushes commonly used scripts in bash, PHP, Python
+# used by OPS department
+#
+# TODO: clear-cache-wsdl is not so commonly used, find a better place!
+#
 class softecscripts (
   $logdir_owner           = 'root',
   $logdir_group           = 'adm',
