@@ -57,12 +57,13 @@ class softecscripts (
     require => $require,
   }
 
-  # richiede readlink, sendmail, flock
+  # requires readlink, sendmail, flock
   file { '/usr/local/lib/bash/softec-common.sh':
     source  => 'puppet:///modules/softecscripts/lib/bash/softec-common.sh',
     require => File['/usr/local/lib/bash'],
   }
 
+  # sourced from softec_private module on our private gitlab
   file { '/usr/local/etc/slack.conf':
     source => 'puppet:///modules/softec_private/etc/slack.conf',
   }
