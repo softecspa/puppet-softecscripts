@@ -253,8 +253,10 @@ function slack() {
     [ -f /usr/local/etc/slack.conf ] || exit 1
     . /usr/local/etc/slack.conf
     [ -z "$SLACK_URL" ] && exit 1
-    if [ -n "$1" ] && [ $LOGLEVEL -ge $LOGLEVEL_DEBUG ]; then
-      echo "`date "+%Y-%m-%d %T"` [$$] INFO: Updating channel #ops on https://softec.slack.com"
+    if [ -n "$1" ]; then
+      if [ $LOGLEVEL -ge $LOGLEVEL_DEBUG ]; then
+        echo "`date "+%Y-%m-%d %T"` [$$] INFO: Updating channel #ops on https://softec.slack.com"
+      fi
       PAYLOAD="payload={\"channel\": \"#ops\", \"text\": \"*$HOSTNAME*: $1\"}"
       /usr/bin/curl --silent -X POST --data-urlencode "$PAYLOAD" "$SLACK_URL"
     fi
