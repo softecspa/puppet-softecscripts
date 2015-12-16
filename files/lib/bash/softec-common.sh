@@ -246,7 +246,16 @@ if [ ! -w ${LOGFILE} ]; then
     exit 1
 fi
 
+# DESCRIPTION
+#
 # send a message to slack if slack is configured
+#
+# PARAMETERS
+#
+# $1 : the message to send
+#
+# REQUIRES
+#   SLACK_URL variable in /usr/local/etc/slack.conf
 function slack() {
     ensure_bin 'curl' || exit 1
     # SLACK_URL variable is secret, is not inside the library, it must be created on server in a different way
