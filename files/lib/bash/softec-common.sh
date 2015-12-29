@@ -283,7 +283,7 @@ function log() {
 function log_error() {
     if [ -n "$1" ] && [ $LOGLEVEL -ge $LOGLEVEL_ERROR ]; then
         echo -e "`date "+%Y-%m-%d %T"` [$$] ERR: $1" 1>&2
-        slack $1
+        slack "$1"
     fi
     echo -e "`date "+%Y-%m-%d %T"` [$$] ERR: $1" >> $LOGFILE
 }
