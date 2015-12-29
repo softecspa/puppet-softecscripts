@@ -4,15 +4,9 @@
 # TODO: clear-cache-wsdl is not so commonly used, find a better place!
 #
 class softecscripts (
-  $logdir_owner           = 'root',
-  $logdir_group           = 'adm',
-  $logdir_mode            = '2750',
-  $logrotate_olddir_owner = 'root',
-  $logrotate_olddir_group = 'adm',
-  $logrotate_olddir_mode  = '0750',
-  $logrotate_create_owner = 'root',
-  $logrotate_create_group = 'adm',
-  $logrotate_create_mode  = '0664'
+  $logs_owner           = 'root',
+  $logs_group           = 'adm',
+  $logs_mode            = '2750',
 ){
 
   # 06/02/2015 l.cocchi: proviamo a togliere il pinning dal PHP 

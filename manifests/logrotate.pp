@@ -2,9 +2,9 @@ class softecscripts::logrotate {
 
   file {'/var/local/log/archives/':
     ensure  => directory,
-    owner   => $softecscripts::logrotate_olddir_owner,
-    group   => $softecscripts::logrotate_olddir_group,
-    mode    => $softecscripts::logrotate_olddir_mode
+    owner   => $softecscripts::logs_owner,
+    group   => $softecscripts::logs_group,
+    mode    => $softecscripts::logs_mode
   }
 
   logrotate::file { 'softecscripts':
@@ -14,10 +14,7 @@ class softecscripts::logrotate {
     options      => [ 'missingok', 'compress', 'notifempty' ],
     archive      => true,
     olddir       => '/var/local/log/archives/softecscripts',
-    olddir_owner => $softecscripts::logrotate_olddir_owner,
-    olddir_group => $softecscripts::logrotate_olddir_group,
-    olddir_mode  => $softecscripts::logrotate_olddir_mode,
-    create       => "${softecscripts::logrotate_create_mode} ${softecscripts::logrotate_create_owner} ${softecscripts::logrotate_create_group}",
-    require       => File['/var/local/log/archives/']
+    create       => "${softecscripts::logs_mode} ${softecscripts::logs_owner} ${softecscripts::logs_group}",
+    require       => File['/var/local/log/archives/'],
   }
 }
