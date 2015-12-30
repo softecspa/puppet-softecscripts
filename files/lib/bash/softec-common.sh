@@ -5,11 +5,13 @@
 # Libreria con le funzioni di utilita' degli script di Softec
 #
 # inclusione libreria:
-# . $(dirname $(realpath $0))/../lib/bash/softec-common.sh || exit
+# . $(dirname $(readlink -f $0))/../lib/bash/softec-common.sh || exit
 
 # General variables
-SCRIPTNAME="$(basename $(/usr/bin/realpath $0))"
-SCRIPTPATH=$(dirname $(/usr/bin/realpath $0))
+
+SCRIPT="$(readlink -f $0)"
+SCRIPTNAME="$(basename $SCRIPT)"
+SCRIPTPATH="$(dirname $SCRIPT)"
 SHORTNAME=$(basename ${SCRIPTNAME%.sh})
 LOGLEVEL_DEBUG=3
 LOGLEVEL_NORMAL=2
@@ -31,7 +33,7 @@ LOGLEVEL_QUIET=0
 : ${CACHEDIR:="/var/cache/${SHORTNAME}"}
 
 # Default values for script configuration
-: ${CONFDIR:=$(/usr/bin/realpath $SCRIPTPATH/../etc)}
+: ${CONFDIR:=$(readlink -f $SCRIPTPATH/../etc)}
 : ${CONFFILENAME:="$SHORTNAME.conf"}
 
 # Default values for locks
@@ -241,9 +243,9 @@ fi
 touch ${LOGFILE} 2> /dev/null
 
 if [ ! -w ${LOGFILE} ]; then
-    echo "Cannot write log file '${LOGFILE}'"
-    echo "Directory ${LOGDIR} is not writeable for '$USER'"
-    exit 1
+  echo "Cannot write log file '${LOGFILE}'"
+  echo "Directory ${LOGDIR} is not writeable for '$USER'"
+  exit 1
 fi
 
 # DESCRIPTION
@@ -253,128 +255,142 @@ fi
 # PARAMETERS
 #
 # $1 : the message to send
+# $2 : channel to send message to
 #
 # REQUIRES
 #   SLACK_URL variable in /usr/local/etc/slack.conf
-function slack() {
-    ensure_bin 'curl' || exit 1
-    # SLACK_URL variable is secret, is not inside the library, it must be created on server in a different way
-    [ -f /usr/local/etc/slack.conf ] || exit 1
-    . /usr/local/etc/slack.conf
-    [ -z "$SLACK_URL" ] && exit 1
-    if [ -n "$1" ]; then
-      if [ $LOGLEVEL -ge $LOGLEVEL_DEBUG ]; then
-        echo "`date "+%Y-%m-%d %T"` [$$] INFO: Updating channel #ops on https://softec.slack.com"
-      fi
-      PAYLOAD="payload={\"channel\": \"#ops\", \"text\": \"*$HOSTNAME*: $1\"}"
-      /usr/bin/curl --silent -X POST --data-urlencode "$PAYLOAD" "$SLACK_URL"
+function slack()
+{
+  ensure_bin 'curl' || exit 1
+  # SLACK_URL variable is secret, is not inside the library, it must be created on server in a different way
+  [ -f /usr/local/etc/slack.conf ] || exit 1
+  . /usr/local/etc/slack.conf
+  [ -z "$SLACK_URL" ] && exit 1
+  if [ -n "$1" ]; then
+    if [ $LOGLEVEL -ge $LOGLEVEL_DEBUG ]; then
+      echo "`date "+%Y-%m-%d %T"` [$$] INFO: Updating channel #ops on https://softec.slack.com"
     fi
+    CHANNEL=${2:-'#OPS'}
+    TEXT="*$USER@$HOSTNAME:$SCRIPT*\n\`\`\`$1\`\`\`"
+    PAYLOAD="payload={\"channel\": \"$CHANNEL\", \"text\": \"$TEXT\"}"
+    /usr/bin/curl --silent -X POST --data-urlencode "$PAYLOAD" "$SLACK_URL"
+  fi
 }
 
 # default: stampa sempre su file e su std output se richiesto
-function log() {
-    if [ -n "$1" ] && [ $LOGLEVEL -ge $LOGLEVEL_NORMAL ]; then
-        echo "`date "+%Y-%m-%d %T"` [$$] INFO: $1"
-    fi
-    echo "`date "+%Y-%m-%d %T"` [$$] INFO: $1" >> $LOGFILE
+function log()
+{
+  if [ -n "$1" ] && [ $LOGLEVEL -ge $LOGLEVEL_NORMAL ]; then
+    echo "`date "+%Y-%m-%d %T"` [$$] INFO: $1"
+  fi
+  echo "`date "+%Y-%m-%d %T"` [$$] INFO: $1" >> $LOGFILE
 }
 
 # errori: stampa su stderr se richiesto e SEMPRE su file
-function log_error() {
-    if [ -n "$1" ] && [ $LOGLEVEL -ge $LOGLEVEL_ERROR ]; then
-        echo -e "`date "+%Y-%m-%d %T"` [$$] ERR: $1" 1>&2
-        slack "$1"
-    fi
-    echo -e "`date "+%Y-%m-%d %T"` [$$] ERR: $1" >> $LOGFILE
+function log_error()
+{
+  if [ -n "$1" ] && [ $LOGLEVEL -ge $LOGLEVEL_ERROR ]; then
+    echo -e "`date "+%Y-%m-%d %T"` [$$] ERR: $1" 1>&2
+    slack "$1"
+  fi
+  echo -e "`date "+%Y-%m-%d %T"` [$$] ERR: $1" >> $LOGFILE
 }
 
 # debug: stampa su stdout e su file se il livello è abbastanza alto
-function log_debug() {
-    if [ -n "$1" ] && [ $LOGLEVEL -ge $LOGLEVEL_DEBUG ]; then
-        echo -e "`date "+%Y-%m-%d %T"` [$$] DEBUG: $1"
-        echo -e "`date "+%Y-%m-%d %T"` [$$] DEBUG: $1" >> $LOGFILE
-    fi
+function log_debug()
+{
+  if [ -n "$1" ] && [ $LOGLEVEL -ge $LOGLEVEL_DEBUG ]; then
+    echo -e "`date "+%Y-%m-%d %T"` [$$] DEBUG: $1"
+    echo -e "`date "+%Y-%m-%d %T"` [$$] DEBUG: $1" >> $LOGFILE
+  fi
 }
 
 # livello di verbosità dello script
-function setloglevel() {
-    local LEVEL=2
-    [ -n "$1" ] && LEVEL=$1
+function setloglevel()
+{
+  local LEVEL=2
+  [ -n "$1" ] && LEVEL=$1
 
-    LOGLEVEL=$LEVEL
+  LOGLEVEL=$LEVEL
 }
 
 # invio e-mail
-function send_mail() {
+function send_mail()
+{
+  ensure_bin 'sendmail' || exit 1
 
-    ensure_bin 'sendmail' || exit 1
+  local FN="send_mail"
+  local TMPFILE="/tmp/$(basename $0).$$.$RANDOM"
+  local SUBJECT="$1"
+  local BODY="$2"
 
-    local FN="send_mail"
-    local TMPFILE="/tmp/$(basename $0).$$.$RANDOM"
-    local SUBJECT="$1"
-    local BODY="$2"
+  if [ $# -ne 2 ]; then
+    echo "Usage: $FN subject body" 1>&2
+    exit 1
+  fi
 
-    if [ $# -ne 2 ]; then
-        echo "Usage: $FN subject body" 1>&2
-        exit 1
-    fi
-
-    cat << EOF >> $TMPFILE
+  cat << EOF >> $TMPFILE
 From: $MAILFROM
 To: $MAILTO
 Subject: $SUBJECT
 
 ${BODY}
 EOF
-    cat "$TMPFILE" | /usr/sbin/sendmail -f $MAILFROM $MAILTO
-    rm "$TMPFILE"
+  cat "$TMPFILE" | /usr/sbin/sendmail -f $MAILFROM $MAILTO
+  rm "$TMPFILE"
 }
 
 # GESTIONE DEL LOCK
 
-function get_lock() {
-    ensure_bin 'flock' || exit 1
+function get_lock()
+{
+  ensure_bin 'flock' || exit 1
 
-    exec 1000>$LOCKFILE
-    if flock -n -x 1000; then
-        return
-    else
-        log_error "impossibile acquisire il lock. Uscita"
-        exit 1
-    fi
+  exec 1000>$LOCKFILE
+  if flock -n -x 1000; then
+    return
+  else
+    log_error "impossibile acquisire il lock. Uscita"
+    exit 1
+  fi
 }
 
-function unlock() {
-    log_debug "removing lockfile $LOCKFILE"
-    [ -f $LOCKFILE ] && rm -f $LOCKFILE
+function unlock()
+{
+  log_debug "removing lockfile $LOCKFILE"
+  [ -f $LOCKFILE ] && rm -f $LOCKFILE
 }
 
 # SIGNAL HANDLINGS
 # tutti i segnali generano una exit, la exit esegue se esiste la funzione clean
-function sig_exit {
-    log_debug "running exit routine"
+function sig_exit 
+{
+  log_debug "running exit routine"
 
-    unlock
+  unlock
 
-    # richiama la funzione 'clean', se esiste (pulizia file temporanei)
-    if type clean 2>/dev/null | grep -q function; then
-        clean
-    fi
+  # richiama la funzione 'clean', se esiste (pulizia file temporanei)
+  if type clean 2>/dev/null | grep -q function; then
+    clean
+  fi
 }
 
-function sig_int {
-    log_debug "WARNING: SIGINT caught"
-    exit 1002
+function sig_int
+{
+  log_debug "WARNING: SIGINT caught"
+  exit 1002
 }
 
-function sig_quit {
-    log_debug "SIGQUIT caught"
-    exit 1003
+function sig_quit
+{
+  log_debug "SIGQUIT caught"
+  exit 1003
 }
 
-function sig_term {
-    log_debug "WARNING: SIGTERM caught"
-    exit 1015
+function sig_term
+{
+  log_debug "WARNING: SIGTERM caught"
+  exit 1015
 }
 
 trap sig_exit EXIT    # SIGEXIT
@@ -385,61 +401,64 @@ trap sig_term TERM    # SIGTERM
 # UTILITY
 
 # dato il nome di una variabile, ritorna 0 solo se e' definita e valorizzata
-has_value() {
-    if [[ ${!1-X} == ${!1-Y} ]]; then
-        if [[ -n ${!1} ]]; then
-            return 0
-        fi
+has_value()
+{
+  if [[ ${!1-X} == ${!1-Y} ]]; then
+    if [[ -n ${!1} ]]; then
+      return 0
     fi
-    return 1
+  fi
+  return 1
 }
 
 # stampa una variabile dato il suo nome
-print_var() {
-    echo $(eval echo \$$1)
+print_var() 
+{
+  echo $(eval echo \$$1)
 }
 
 # funzione generica per creare una directory o riaggiustarne i permessi/proprietario
 # TODO aggiungere check
-ensure_dir() {
+ensure_dir()
+{
 
-    local DIR=$1
-    local PERMS=$2
-    local OWNER=$3
-    local GROUP=$4
+  local DIR=$1
+  local PERMS=$2
+  local OWNER=$3
+  local GROUP=$4
 
-    # se la directory specificata e' un link, skippa
-    if [ -L ${DIR} ]; then
-        log_error "${DIR} is a symlink. Exiting function"
-        return
-    fi
+  # se la directory specificata e' un link, skippa
+  if [ -L ${DIR} ]; then
+    log_error "${DIR} is a symlink. Exiting function"
+    return
+  fi
 
-    # se non esiste la directory la crea opportunamente
-    if [ ! -d ${DIR} ]; then
-        mkdir -p ${DIR}
-        log_debug "Created ${DIR}"
-    fi
+  # se non esiste la directory la crea opportunamente
+  if [ ! -d ${DIR} ]; then
+    mkdir -p ${DIR}
+    log_debug "Created ${DIR}"
+  fi
 
-    # se la directory esiste ma ha i permessi fuori posto li sistema
-    if [ -n "$PERMS" ]; then
-        if [ $(stat --printf %a ${DIR}) != ${PERMS} ]; then
-            chmod ${PERMS} ${DIR}
-            log_debug "Set ${PERMS} as permissions of ${DIR}"
-        fi
+  # se la directory esiste ma ha i permessi fuori posto li sistema
+  if [ -n "$PERMS" ]; then
+    if [ $(stat --printf %a ${DIR}) != ${PERMS} ]; then
+      chmod ${PERMS} ${DIR}
+      log_debug "Set ${PERMS} as permissions of ${DIR}"
     fi
-    # se la directory esiste ma il proprietario/gruppo e' sbagliato li reimposta
-    if [ -n "$OWNER" ]; then
-        if [ $(stat --printf %U ${DIR}) != ${OWNER} ]; then
-            chown ${OWNER} ${DIR}
-            log_debug "Set ${OWNER} as owner of ${DIR}"
-        fi
+  fi
+  # se la directory esiste ma il proprietario/gruppo e' sbagliato li reimposta
+  if [ -n "$OWNER" ]; then
+    if [ $(stat --printf %U ${DIR}) != ${OWNER} ]; then
+      chown ${OWNER} ${DIR}
+      log_debug "Set ${OWNER} as owner of ${DIR}"
     fi
-    if [ -n "$GROUP" ]; then
-        if [ $(stat --printf %G ${DIR}) != ${GROUP} ]; then
-            chgrp ${GROUP} ${DIR}
-            log_debug "Set ${GROUP} as owner of ${DIR}"
-        fi
+  fi
+  if [ -n "$GROUP" ]; then
+    if [ $(stat --printf %G ${DIR}) != ${GROUP} ]; then
+      chgrp ${GROUP} ${DIR}
+      log_debug "Set ${GROUP} as owner of ${DIR}"
     fi
+  fi
 }
 
 
@@ -470,38 +489,38 @@ ensure_dir() {
 #
 wait_for_low_load()
 {
-    CPU_NUM=$(cat /proc/cpuinfo |egrep "^processor"|wc -l)
-    ((DEFAULT_MAX_LOAD = CPU_NUM * 2 + 1))
+  CPU_NUM=$(cat /proc/cpuinfo |egrep "^processor"|wc -l)
+  ((DEFAULT_MAX_LOAD = CPU_NUM * 2 + 1))
 
-    # get parameters or set default
-    MAX_LOAD=${1:-$DEFAULT_MAX_LOAD}
-    MAX_WAIT=${2:-7200}
-    WAIT_TIME=${3:-300}
+  # get parameters or set default
+  MAX_LOAD=${1:-$DEFAULT_MAX_LOAD}
+  MAX_WAIT=${2:-7200}
+  WAIT_TIME=${3:-300}
 
-    START_TS=$(date +%s)
-    ((MAX_TS = START_TS + MAX_WAIT))
+  START_TS=$(date +%s)
+  ((MAX_TS = START_TS + MAX_WAIT))
+  CURRENT_TS=$(date +%s)
+
+  while [ $CURRENT_TS -lt $MAX_TS ]; do
+    CURR_LOAD=$(uptime | awk '{ printf "%d", $9 }')
+    if [ -z "${CURR_LOAD}" ]; then
+      log_error "Can't check load average"
+      continue
+    fi
+
+    if [ ${CURR_LOAD} -ge ${MAX_LOAD} ] ; then
+      log "Current load is '${CURR_LOAD}', sleeping for ${WAIT_TIME} until '${MAX_WAIT}' seconds has passed or load goes under '${MAX_LOAD}'"
+      sleep $WAIT_TIME
+    else
+      log_debug "Current load is '${CURR_LOAD}', under '${MAX_LOAD}' so we can stop waiting"
+      return 0
+    fi
+
     CURRENT_TS=$(date +%s)
+  done
 
-    while [ $CURRENT_TS -lt $MAX_TS ]; do
-        CURR_LOAD=$(uptime | awk '{ printf "%d", $9 }')
-        if [ -z "${CURR_LOAD}" ]; then
-            log_error "Can't check load average"
-            continue
-        fi
-
-        if [ ${CURR_LOAD} -ge ${MAX_LOAD} ] ; then
-            log "Current load is '${CURR_LOAD}', sleeping for ${WAIT_TIME} until '${MAX_WAIT}' seconds has passed or load goes under '${MAX_LOAD}'"
-            sleep $WAIT_TIME
-        else
-            log_debug "Current load is '${CURR_LOAD}', under '${MAX_LOAD}' so we can stop waiting"
-            return 0
-        fi
-
-        CURRENT_TS=$(date +%s)
-    done
-
-    log "Maximum time waited ('$MAX_WAIT' seconds), the load is too high, continue at your own risk"
-    return 1
+  log "Maximum time waited ('$MAX_WAIT' seconds), the load is too high, continue at your own risk"
+  return 1
 }
 
 # DRBD is Primary?
@@ -520,25 +539,26 @@ wait_for_low_load()
 #       exit N
 #   fi
 #
-drbd_is_primary() {
-    local resource=$1
-    local fn='drbd_is_primary'
-    local drbdadm_binary='drbdadm'
+drbd_is_primary()
+{
+  local resource=$1
+  local fn='drbd_is_primary'
+  local drbdadm_binary='drbdadm'
 
-    if [ $# -ne 1 ]; then
-        log_error "${fn} usage: ${fn} resource_name"
-        return 1
-    fi
+  if [ $# -ne 1 ]; then
+    log_error "${fn} usage: ${fn} resource_name"
+    return 1
+  fi
 
-    ensure_bin ${drbdadm_binary} || return 1
+  ensure_bin ${drbdadm_binary} || return 1
 
-    if [ "x$(drbdadm state ${resource} | \
-        awk -F / '{ print $1 }')" == 'xPrimary' ]
-    then
-        return 0
-    else
-        return 1
-    fi
+  if [ "x$(drbdadm state ${resource} | \
+    awk -F / '{ print $1 }')" == 'xPrimary' ]
+then
+  return 0
+else
+  return 1
+fi
 }
 
 # ssh_exec
@@ -558,26 +578,27 @@ drbd_is_primary() {
 #       echo 'error'
 #   fi
 #
-ssh_exec() {
-    local host="$1"
-    local cmd="$2"
-    local user=${3:-root}
-    local verbose=${4:-noverbose}
-    local fn_name="ssh_exec()"
-    local help="Usage: $fn_name cmd host [user] [verbose]"
+ssh_exec()
+{
+  local host="$1"
+  local cmd="$2"
+  local user=${3:-root}
+  local verbose=${4:-noverbose}
+  local fn_name="ssh_exec()"
+  local help="Usage: $fn_name cmd host [user] [verbose]"
 
-    if [ $# -lt 2 ]; then
-        log_error ${help}
-        return 1
-    fi
+  if [ $# -lt 2 ]; then
+    log_error ${help}
+    return 1
+  fi
 
-    ensure_bin ssh || return 1
+  ensure_bin ssh || return 1
 
-    if [ "x${verbose}" == "xverbose" ]; then
-        ssh -l ${user} ${host} "${cmd}"
-    else
-        ssh -l ${user} ${host} "${cmd} >/dev/null 2>&1";
-    fi
+  if [ "x${verbose}" == "xverbose" ]; then
+    ssh -l ${user} ${host} "${cmd}"
+  else
+    ssh -l ${user} ${host} "${cmd} >/dev/null 2>&1";
+  fi
 
-    return $?
+  return $?
 }
