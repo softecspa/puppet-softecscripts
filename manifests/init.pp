@@ -9,9 +9,6 @@ class softecscripts (
   $logs_mode            = '2750',
 ){
 
-  # 06/02/2015 l.cocchi: proviamo a togliere il pinning dal PHP 
-  #  era `include softec_php::cli`
-  apt::ppa { 'ppa:ondrej/php5-oldstable': }
   include php
   include php::cli
   include softecscripts::logrotate
