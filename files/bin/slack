@@ -1,0 +1,79 @@
+#!/bin/bash
+
+LOGLEVEL=$LOGLEVEL_DEBUG
+
+. $(dirname $(readlink -f $0))/../lib/bash/softec-common.sh || exit
+
+# Load configuration from default path
+# call with a parameter to get a specific config file
+include_conf
+
+# set a lockfile... at the end of the script call unlock
+get_lock
+
+function help()
+{
+  echo -e "\n\nSYNTAX:\n\n\t$SHORTNAME -c <CHANNEL> -m <MESSAGE> -d\n\n"
+}
+
+function clean()
+{
+  unlock
+}
+
+# aspetta se il loadavg non è abbastanza basso
+if ! wait_for_low_load; then
+  log_error "waited too long for low load5"
+  exit 1
+fi
+
+
+CHANNEL='#alerts'
+
+# i : all'inizio della stringa di options servono
+#     a gestire l'errore esplicitamente in caso di
+#     invio di parametri non previsti, infatti
+#     il valore di OPT diventa ? e OPTARG prende
+#     il valore del parametro non previsto
+# i : DOPO un parametro previsto significano invece
+#     che il parametro richiede un argomento
+while getopts :c:m:dh OPT; do
+  case ${OPT} in
+    c)
+      CHANNEL="${OPTARG}"
+      log_debug "Setting channel to $CHANNEL"
+      ;;
+    d)
+      log_debug "Setting loglevel to debug"
+      LOGLEVEL=$LOGLEVEL_DEBUG
+      ;;
+    m)
+      MESSAGE="${OPTARG}"
+      log_debug "Setting message to '$MESSAGE'"
+      ;;
+    h)
+      help
+      exit 0
+      ;;
+    \?)
+      "ERROR: invalid option: -${OPTARG}"
+      help
+      exit 1
+      ;;
+    :)
+      log_error "ERROR: option -$OPTARG requires an argument ..."
+      quit 1
+      ;;
+  esac
+done
+
+if [ -z "$MESSAGE" ]; then
+  log_error "Cannot send an empty message"
+  help
+  exit 2
+fi
+
+TEXT_FOOTER="\nMore info could be present at $HOSTNAME:$LOGFILE\n"
+TEXT="$MESSAGE\n$TEXT_FOOTER"
+slack "$TEXT" $CHANNEL
+log_debug "Sent message to Slack channel $CHANNEL: $MESSAGE"
