@@ -23,16 +23,16 @@ get_lock
 # Questa funzione viene chiamata in caso di CTRL-C
 # Viene inoltre chiamata esplicitamente nella quit
 # per fare la stessa pulizia in caso di uscita normale
-# 
+#
 function clean()
 {
-    rm -f $CACHEDIR/*
+  rm -f $CACHEDIR/*
 }
 
 # Classica funzione che spiega la sintassi
 function help()
 {
-    echo -e "\n\nSYNTAX:\n\n\tExplain command syntax here...\n\n"
+  echo -e "\n\nSYNTAX:\n\n\tExplain command syntax here...\n\n"
 }
 
 # Funzione chiamata alla fine dello script
@@ -40,7 +40,7 @@ function help()
 # un valore come primo parametro
 function clean()
 {
-    unlock
+  unlock
 }
 
 # fermati se l'utente con cui sto girando non è root
@@ -48,8 +48,8 @@ ensure_user 'root'
 
 # aspetta se il loadavg non è abbastanza basso
 if ! wait_for_low_load; then
-    log_error "waited too long for low load5"
-    exit 1
+  log_error "waited too long for low load5"
+  exit 1
 fi
 
 # i : all'inizio della stringa di options servono
@@ -60,31 +60,31 @@ fi
 # i : DOPO un parametro previsto significano invece
 #     che il parametro richiede un argomento
 while getopts :a:b:dir:h: OPT; do
-    case ${OPT} in
-        a)
-	    echo "option a has value ${OPTARG}"
-	    ;;
-        s)
-	    log_debug "Sending mail"
-	    send_mail "Soggetto" "Contenuto del messaggio"
-	    ;;
-        dir)
-	    log_debug "Creating ${OPTARG}..."
-	    ensure_dir ${OPTARG} 02775 root admin
-	    ;;
-        h)
-            help
-            quit
-            ;;
-        \?)
-            "ERROR: invalid option: -${OPTARG}"
-            help
-            quit 1
-            ;;
-        :)
-            log_error "ERROR: option -$OPTARG requires an argument ..."
-            quit 1
-            ;;
-    esac
+  case ${OPT} in
+    a)
+      echo "option a has value ${OPTARG}"
+      ;;
+    s)
+      log_debug "Sending mail"
+      send_mail "Soggetto" "Contenuto del messaggio"
+      ;;
+    dir)
+      log_debug "Creating ${OPTARG}..."
+      ensure_dir ${OPTARG} 02775 root admin
+      ;;
+    h)
+      help
+      quit
+      ;;
+    \?)
+      "ERROR: invalid option: -${OPTARG}"
+      help
+      quit 1
+      ;;
+    :)
+      log_error "ERROR: option -$OPTARG requires an argument ..."
+      quit 1
+      ;;
+  esac
 done
 
