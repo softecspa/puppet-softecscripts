@@ -28,7 +28,7 @@ if ! wait_for_low_load; then
 fi
 
 
-CHANNEL='#alerts'
+CHANNEL='@slackbot'
 
 # i : all'inizio della stringa di options servono
 #     a gestire l'errore esplicitamente in caso di
