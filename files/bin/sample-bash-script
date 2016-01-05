@@ -1,17 +1,17 @@
 #!/bin/bash
 
-LOGLEVEL=$LOGLEVEL_DEBUG
 
 . $(dirname $(readlink -f $0))/../lib/bash/softec-common.sh || exit
 
-echo -e "\nSome info based on my default variables:\n"
-echo -e "Hello I'm '$SCRIPTNAME' running from '$SCRIPTPATH'\n, you can call me shortly '$SHORTNAME'\n"
-echo -e "I can log in '$LOGFILE', I have a cache dir in '$CACHEDIR', if needed\n"
-echo -e "My config come from '$CONFDIR/$CONFFILENAME'\n"
-echo -e "If I send mail, the sender is '$MAILFROM' and I write to '$MAILTO'\n"
+LOGLEVEL=$LOGLEVEL_DEBUG
 
-echo -e "The default LOGLEVEL is normal ($LOGLEVEL_NORMAL), but I set it to "
-echo -e "debug ($LOGLEVEL_DEBUG) to be more verbose\n"
+echo -e "\nSome info based on my default variables:\n"
+echo -e "* Hello I'm '$SCRIPTNAME' running from '$SCRIPTPATH', you can call me shortly '$SHORTNAME'"
+echo -e "* I can log in '$LOGFILE', I have a cache dir in '$CACHEDIR', if needed."
+echo -e "* My config come from '$CONFDIR/$CONFFILENAME'"
+echo -e "* If I send mail, the sender is '$MAILFROM' and I write to '$MAILTO'"
+echo -e "* The default LOGLEVEL is normal ($LOGLEVEL_NORMAL), but I set it to "
+echo -e "  debug ($LOGLEVEL_DEBUG) to be more verbose\n"
 
 # Load configuration from default path
 # call with a parameter to get a specific config file
@@ -59,7 +59,7 @@ fi
 #     il valore del parametro non previsto
 # i : DOPO un parametro previsto significano invece
 #     che il parametro richiede un argomento
-while getopts :a:b:dir:h: OPT; do
+while getopts :a:sd:h OPT; do
   case ${OPT} in
     a)
       echo "option a has value ${OPTARG}"
@@ -68,7 +68,7 @@ while getopts :a:b:dir:h: OPT; do
       log_debug "Sending mail"
       send_mail "Soggetto" "Contenuto del messaggio"
       ;;
-    dir)
+    d)
       log_debug "Creating ${OPTARG}..."
       ensure_dir ${OPTARG} 02775 root admin
       ;;
