@@ -9,6 +9,8 @@ class softecscripts (
   $logs_mode            = '2750',
 ){
 
+  ensure_resource('group', $logs_group, { 'ensure' => 'present' })
+
   include php
   include php::cli
   include softecscripts::logrotate
