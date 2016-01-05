@@ -7,30 +7,28 @@
 #
 # softecscripts::root { 'root scripts': }
 #
-define softecscripts::root
+class softecscripts::root(
+  $svn_host = '',
+  $svn_user = '',
+  $svn_password = '',
+  $svn_method   = 'http',
+)
 {
 
+  include subversion
+
+
   if ($::svn_user == '') or ($::svn_password == '') or ($::svn_host == '') {
-    fail ('you need to define $svn_user $svn_password and $svn_host global variables!')
+    fail ('Missing parameters $svn_user $svn_password or $svn_host')
   }
 
-  $method = $::svn_method ?{
-    ''      => 'http',
-    default => $::svn_method
+  vcsrepo { '/root/scripts':
+    ensure              => latest,
+    provider            => 'svn',
+    source              => "${svn_method}://${svn_host}/sistemi/trunk/scripts",
+    basic_auth_username => $svn_user,
+    basic_auth_password => $svn_password,
+    require             => Package['subversion'],
   }
 
-  file { '/root/scripts':
-    ensure  => directory,
-  }
-
-  subversion::checkout { 'root-scripts-co':
-    method              => $method,
-    host                => $::svn_host,
-    repopath            => '/sistemi/trunk/scripts',
-    workingdir          => '/root/scripts',
-    svnuser             => $::svn_user,
-    password            => $::svn_password,
-    require             => File['/root/scripts'],
-    trustcert           => true,
-  }
 }
