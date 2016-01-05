@@ -18,7 +18,7 @@ class softecscripts::root(
   include subversion
 
 
-  if ($::svn_user == '') or ($::svn_password == '') or ($::svn_host == '') {
+  if ($svn_user == '') or ($svn_password == '') or ($svn_host == '') {
     fail ('Missing parameters $svn_user $svn_password or $svn_host')
   }
 
