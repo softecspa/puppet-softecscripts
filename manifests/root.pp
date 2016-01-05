@@ -5,7 +5,7 @@
 #
 # === Examples
 #
-# softecscripts::root { 'root scripts': }
+# include softecscripts::root
 #
 class softecscripts::root(
   $svn_host = '',
