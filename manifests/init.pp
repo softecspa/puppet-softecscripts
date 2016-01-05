@@ -30,22 +30,14 @@ class softecscripts (
     mode    => 0775,
     recurse => true,
     ignore  => '.svn',
-    owner   => root,
-    group   => root,
-  }
-
-  $require = $logdir_group ? {
-    'adm'   => undef,
-    'root'  => undef,
-    default => Group[$logdir_group]
   }
 
   file { '/var/local/log':
     ensure  => directory,
-    owner   => $logdir_owner,
-    mode    => $logdir_mode,
-    group   => $logdir_group,
-    require => $require,
+    owner   => $logs_owner,
+    mode    => $logs_mode,
+    group   => $logs_group,
+    require => Group[$logs_group],
   }
 
   # requires readlink, sendmail, flock
