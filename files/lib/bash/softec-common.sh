@@ -261,7 +261,7 @@ fi
 #   SLACK_URL variable in /usr/local/etc/slack.conf
 function slack()
 {
-  ensure_bin 'curl' || exit 1
+  ensure_bin 'curl' || return 1
   # SLACK_URL variable is secret, is not inside the library, it must be created on server in a different way
   [ -f /usr/local/etc/slack.conf ] || exit 1
   . /usr/local/etc/slack.conf
@@ -317,7 +317,7 @@ function setloglevel()
 # invio e-mail
 function send_mail()
 {
-  ensure_bin 'sendmail' || exit 1
+  ensure_bin 'sendmail' || return 1
 
   local FN="send_mail"
   local TMPFILE="/tmp/$(basename $0).$$.$RANDOM"
