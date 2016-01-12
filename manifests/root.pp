@@ -8,18 +8,16 @@
 # include softecscripts::root
 #
 class softecscripts::root(
-  $svn_host = '',
+  $svn_host = 'svn.softecspa.it',
   $svn_user = '',
   $svn_password = '',
   $svn_method   = 'http',
 )
 {
-
   include subversion
 
-
   if ($svn_user == '') or ($svn_password == '') or ($svn_host == '') {
-    fail ('Missing parameters $svn_user $svn_password or $svn_host')
+    fail('Missing parameters $svn_user $svn_password or $svn_host')
   }
 
   vcsrepo { '/root/scripts':
