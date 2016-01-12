@@ -263,14 +263,14 @@ function slack()
 {
   ensure_bin 'curl' || return 1
   # SLACK_URL variable is secret, is not inside the library, it must be created on server in a different way
-  [ -f /usr/local/etc/slack.conf ] || exit 1
+  [ -f /usr/local/etc/slack.conf ] || return 1
   . /usr/local/etc/slack.conf
-  [ -z "$SLACK_URL" ] && exit 1
+  [ -z "$SLACK_URL" ] && return 1
   if [ -n "$1" ]; then
-    if [ $LOGLEVEL -ge $LOGLEVEL_DEBUG ]; then
-      echo "`date "+%Y-%m-%d %T"` [$$] INFO: Updating channel #ops on https://softec.slack.com"
-    fi
     CHANNEL=${2:-'#OPS'}
+    if [ $LOGLEVEL -ge $LOGLEVEL_DEBUG ]; then
+      echo "`date "+%Y-%m-%d %T"` [$$] INFO: Updating channel $CHANNEL on https://softec.slack.com"
+    fi
     TEXT="*$USER@$HOSTNAME:$SCRIPT*\n\`\`\`$1\`\`\`"
     PAYLOAD="payload={\"channel\": \"$CHANNEL\", \"text\": \"$TEXT\"}"
     /usr/bin/curl --silent -X POST --data-urlencode "$PAYLOAD" "$SLACK_URL"
