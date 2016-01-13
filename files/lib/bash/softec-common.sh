@@ -206,11 +206,11 @@ function check_root_uid(){
 function get_cache_path()
 {
     if [ ! -d $CACHEDIR ]; then
-        if [ ! -w $(basename $CACHEDIR) ]; then
-            echo "Cannot create cache dir '$CACHEDIR', parent directory is not writeable for '$USER'"
-            exit 1
-        fi
         mkdir -p $CACHEDIR
+        if [ ! -d $CACHEDIR ]; then
+            echo "Cannot create cache dir '$CACHEDIR', parent directory is not writeable for '$USER'"
+            return 1
+        fi
     fi
     echo $CACHEDIR
 }
