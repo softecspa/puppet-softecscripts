@@ -1,0 +1,76 @@
+#!/bin/bash
+
+. $(dirname $(readlink -f $0))/../lib/bash/softec-common.sh || exit
+
+LOGLEVEL=$LOGLEVEL_DEBUG
+
+# set a lockfile... at the end of the script call unlock
+get_lock
+
+# Classica funzione che spiega la sintassi
+function help()
+{
+  echo -e "\n\nSYNTAX:\n\n\tExplain command syntax here...\n\n"
+}
+
+# Funzione chiamata alla fine dello script
+# restituisce 0 a meno che non gli si passi
+# un valore come primo parametro
+function clean()
+{
+  unlock
+}
+
+# fermati se l'utente con cui sto girando non è root
+ensure_user 'root'
+
+# aspetta se il loadavg non è abbastanza basso
+if ! wait_for_low_load; then
+  log_error "waited too long for low load5"
+  exit 1
+fi
+
+# i : all'inizio della stringa di options servono
+#     a gestire l'errore esplicitamente in caso di
+#     invio di parametri non previsti, infatti
+#     il valore di OPT diventa ? e OPTARG prende
+#     il valore del parametro non previsto
+# i : DOPO un parametro previsto significano invece
+#     che il parametro richiede un argomento
+while getopts :h OPT; do
+  case ${OPT} in
+    a)
+      echo "option a has value ${OPTARG}"
+      ;;
+    h)
+      help
+      quit
+      ;;
+    \?)
+      "ERROR: invalid option: -${OPTARG}"
+      help
+      quit 1
+      ;;
+    :)
+      log_error "ERROR: option -$OPTARG requires an argument ..."
+      quit 1
+      ;;
+  esac
+done
+
+
+CRONPATH=/var/spool/cron/crontabs
+CHANNEL='@lorello'
+
+
+if [ ! -d $CRONPATH ]; then
+  log_debug "Nothing todo $CRONPATH does not exists!"
+  exit 0
+fi
+
+NUMFOUND=$(find $CRONPATH -type f | wc -l)
+LISTFOUND=$(find $CRONPATH -type f)
+CONTENT="Found $NUMFOUND personal crontabs on $HOSTNAME\n$LISTFOUND"
+
+slack "$CONTENT" "$CHANNEL"
+

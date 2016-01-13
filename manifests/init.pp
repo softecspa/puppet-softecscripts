@@ -116,4 +116,13 @@ class softecscripts (
     target => '/usr/local/sbin/purge-old-kernels',
   }
 
+  file { '/usr/local/sbin/user-crontab-finder':
+    source => 'puppet:///modules/softecscripts/sbin/user-crontab-finder',
+    mode   => 755,
+  }->
+  file { '/etc/cron.weekly/user-crontab-finder':
+    ensure  => present,
+    target => '/usr/local/sbin/user-crontab-finder',
+  }
+
 }
