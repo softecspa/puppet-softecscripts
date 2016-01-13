@@ -62,7 +62,6 @@ done
 CRONPATH=/var/spool/cron/crontabs
 CHANNEL='@lorello'
 
-
 if [ ! -d $CRONPATH ]; then
   log_debug "Nothing todo $CRONPATH does not exists!"
   exit 0
