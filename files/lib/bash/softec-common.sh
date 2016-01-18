@@ -317,7 +317,7 @@ function setloglevel()
 # invio e-mail
 function send_mail()
 {
-  ensure_bin 'sendmail' || return 1
+  [ -x /usr/sbin/sendmail ] || return 1
 
   local FN="send_mail"
   local TMPFILE="/tmp/$(basename $0).$$.$RANDOM"
