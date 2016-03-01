@@ -16,7 +16,7 @@ GROUP=$6
 TEMP_FILE="$(/bin/mktemp)"
 
 if [ $# -lt 2 ]; then
-    log_error "Missing parameters"
+    log_error "Missing parameters:\n\t$0 <remote_url> <destination_file> [action] [perms] [user] [group]"
     exit 2
 fi
 
