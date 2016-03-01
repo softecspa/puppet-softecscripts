@@ -121,7 +121,7 @@ class softecscripts (
     mode   => 755,
   }->
   file { '/etc/cron.weekly/user-crontab-finder':
-    ensure  => present,
+    ensure  => absent,
     target => '/usr/local/sbin/user-crontab-finder',
   }
 
