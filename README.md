@@ -12,6 +12,7 @@ Managed resources
 * `sample-bash-script`: template for newly created scripts
 * `softec-common.sh`: shared bash library
 * `softec-python`: shared python library
+* `mc`: minio-client, a replacement for ls, cp, mkdir, diff and rsync commands for filesystems and object storage; see also [official website](https://minio.io/)
 * `nway`: run a process multiple times concurrently to take advantage of multiple cores, significantly reducing processing time; see also [official website](http://timkay.com/nway/).
 * `solo`: lock system, to be sure a scripts get launched in one instance at a time
 * `smartfind`: find in PHP, used on storage appliances with loadaverage too high :) Utility used for backups on USB disks

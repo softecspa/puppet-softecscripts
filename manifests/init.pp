@@ -23,13 +23,13 @@ class softecscripts (
 
   file { '/usr/local/lib/bash':
     ensure => directory,
-    mode   => 02775,
+    mode   => '02775',
   }
 
   file { '/usr/local/lib/softec-python':
     source  => 'puppet:///modules/softecscripts/lib/softec-python',
     ensure  => directory,
-    mode    => 0775,
+    mode    => '0775',
     recurse => true,
     ignore  => '.svn',
   }
@@ -109,20 +109,28 @@ class softecscripts (
 
   file { '/usr/local/sbin/purge-old-kernels':
     source => 'puppet:///modules/softecscripts/sbin/purge-old-kernels',
-    mode   => 755,
+    mode   => '0755',
   }->
   file { '/etc/cron.daily/purge-old-kernels':
-    ensure  => present,
+    ensure => present,
     target => '/usr/local/sbin/purge-old-kernels',
   }
 
   file { '/usr/local/sbin/user-crontab-finder':
     source => 'puppet:///modules/softecscripts/sbin/user-crontab-finder',
-    mode   => 755,
+    mode   => '0755',
   }->
   file { '/etc/cron.weekly/user-crontab-finder':
-    ensure  => absent,
+    ensure => absent,
     target => '/usr/local/sbin/user-crontab-finder',
+  }
+
+
+  # minio utility
+  wget::fetch { "https://dl.minio.io/client/mc/release/linux-${::architecture}/mc":
+    destination => '/usr/local/bin/',
+    cache_dir   => '/var/cache/wget',
+    verbose     => false,
   }
 
 }
