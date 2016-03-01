@@ -36,7 +36,7 @@ if [ ! -d $(/usr/bin/dirname "$DEST_FILE") ]; then
 fi
 
 log_debug "Starting download of $REMOTE_URL to $TEMP_FILE"
-/usr/bin/wget --tries=1 --connect-timeout=10 -q -O $TEMP_FILE $REMOTE_URL
+/usr/bin/wget --tries=10 --waitretry=60 --connect-timeout=10 -q -O $TEMP_FILE $REMOTE_URL
 
 RETVAL=$?
 
