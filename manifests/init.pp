@@ -125,7 +125,7 @@ class softecscripts (
     target => '/usr/local/sbin/user-crontab-finder',
   }
 
-  if $::lsbdistrelease >= 12 {
+  if $::lsbdistrelease >= 14 {
     # minio utility
     # only on updated systems, wget::fetch on https url fails on Lucid
     wget::fetch { "https://dl.minio.io/client/mc/release/linux-${::architecture}/mc":
